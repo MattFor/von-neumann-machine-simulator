@@ -14,3 +14,4 @@ rfd = "*"
 
 thiserror = "*"
 anyhow = "*"
+state = "0.6.0"
