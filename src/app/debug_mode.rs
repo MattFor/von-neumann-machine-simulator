@@ -1,5 +1,5 @@
-use egui::Ui;
 use crate::debugger::debug::Debug as DebugState;
+use egui::Ui;
 
 use super::gui_state::AppState;
 
@@ -28,7 +28,12 @@ pub fn show(ui: &mut Ui, state: &mut AppState, debug: &mut DebugState) {
             .stick_to_bottom(true)
             .show(ui, |ui| {
                 for (line, valid) in &debug.command_history {
-                    let color = if *valid { egui::Color32::GREEN } else { egui::Color32::RED };
+                    let color = if *valid {
+                        egui::Color32::GREEN
+                    } else {
+                        egui::Color32::RED
+                    };
+	                
                     ui.label(egui::RichText::new(line).color(color));
                 }
             });

@@ -1,7 +1,8 @@
+//noinspection RsUnusedImport
 use super::{
     instructions::{Instruction, Opcode},
     machine::Machine,
-    registers::{Registers, ACC_MAX, ACC_MIN},
+    registers::{ACC_MAX, ACC_MIN, Registers},
 };
 
 pub fn execute(machine: &mut Machine, instruction: Instruction) {

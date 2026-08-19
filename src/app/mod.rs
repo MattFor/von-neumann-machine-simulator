@@ -1,7 +1,7 @@
-pub mod gui_state;
-pub mod easy_mode;
-pub mod hard_mode;
 pub mod debug_mode;
+pub mod easy_mode;
+pub mod gui_state;
+pub mod hard_mode;
 
 use eframe::egui;
 
