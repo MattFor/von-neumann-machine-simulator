@@ -1,9 +1,9 @@
 pub struct Registers {
-    pub acc: u16,   // accumulator
+    pub acc: i32,   // accumulator
     pub pc: u16,    // program counter
     pub ir: u16,    // instruction register
     pub mar: u16,   // memory address register
-    pub mbr: u16,   // memory buffer register
+    pub mbr: i32,   // memory buffer register
 }
 
 impl Registers {

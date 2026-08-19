@@ -19,8 +19,8 @@ impl VnmApp {
 }
 
 impl eframe::App for VnmApp {
-    fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
-        egui::TopBottomPanel::top("top_menu").show(ctx, |ui| {
+    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        egui::Panel::top("top_menu").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label("Mode:");
 
@@ -40,7 +40,7 @@ impl eframe::App for VnmApp {
             });
         });
 
-        egui::CentralPanel::default().show(ctx, |ui| match self.state.mode {
+        egui::CentralPanel::default().show(ui, |ui| match self.state.mode {
             UiMode::Easy => {
                 easy_mode::show(ui, &mut self.state);
             }
@@ -53,7 +53,7 @@ impl eframe::App for VnmApp {
         if self.state.running {
             self.state.machine.step();
 
-            ctx.request_repaint();
+            ui.ctx().request_repaint();
         }
     }
 }

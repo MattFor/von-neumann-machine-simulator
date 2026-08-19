@@ -1,6 +1,6 @@
 mod memory;
 mod registers;
-mod machine;
+pub mod machine;
 mod executor;
 mod instructions;
 mod instruction_decoder;
