@@ -1,7 +1,7 @@
 use super::{executor::execute, instruction_decoder::decode, memory::Memory, registers::Registers};
 
 pub struct Machine {
-    pub cpu: Registers, // TODO
+    pub cpu: Registers,
     pub memory: Memory,
 
     pub halted: bool,
@@ -22,7 +22,7 @@ impl Machine {
     }
 
     pub fn reset(&mut self) {
-        self.cpu = Registers::new();
+        self.cpu.reset();
         self.memory.reset();
 
         self.halted = false;

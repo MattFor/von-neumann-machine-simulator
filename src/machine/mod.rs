@@ -1,4 +1,5 @@
 mod memory;
+mod registers;
 mod machine;
 mod executor;
 mod instructions;
