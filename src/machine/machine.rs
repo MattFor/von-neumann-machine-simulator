@@ -22,7 +22,7 @@ impl Machine {
     }
 
     pub fn reset(&mut self) {
-        self.cpu.reset();
+        self.cpu = Registers::new();
         self.memory.reset();
 
         self.halted = false;

@@ -1,6 +1,7 @@
 use super::{
     instructions::{Instruction, Opcode},
     machine::Machine,
+    registers::{Registers, ACC_MAX, ACC_MIN},
 };
 
 pub fn execute(machine: &mut Machine, instruction: Instruction) {
@@ -19,10 +20,18 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
 
         Opcode::Add => {
             machine.cpu.acc += instruction.operand;
+
+            if machine.cpu.acc > ACC_MAX {
+                machine.cpu.acc = ACC_MAX;
+            }
         }
 
         Opcode::Sub => {
             machine.cpu.acc -= instruction.operand;
+
+            if machine.cpu.acc < ACC_MIN {
+                machine.cpu.acc = ACC_MIN;
+            }
         }
 
         Opcode::Mul => {

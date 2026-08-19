@@ -24,11 +24,11 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.separator();
 
     ui.columns(3, |columns| {
-        crate::gui::register_view::show(&mut columns[0], &state.machine);
+        crate::gui::memory_view::show(&mut columns[0], &state.machine);
 
-        crate::gui::memory_view::show(&mut columns[1], &state.machine);
+        crate::gui::register_view::show(&mut columns[1], &state.machine);
 
-        crate::gui::cpu_view::show(&mut columns[2], &state.machine);
+        crate::gui::cpu_view::show(&mut columns[2], &mut state.machine);
     });
 
     ui.separator();
