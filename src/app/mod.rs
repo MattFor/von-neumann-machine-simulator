@@ -1,6 +1,7 @@
 pub mod gui_state;
 pub mod easy_mode;
 pub mod hard_mode;
+pub mod debug_mode;
 
 use eframe::egui;
 
@@ -37,6 +38,14 @@ impl eframe::App for VnmApp {
                 {
                     self.state.mode = UiMode::Hard;
                 }
+
+                #[cfg(feature = "debug-mode")]
+                if ui
+                    .selectable_label(self.state.mode == UiMode::Debug, "Debug")
+                    .clicked()
+                {
+                    self.state.mode = UiMode::Debug;
+                }
             });
         });
 
@@ -47,6 +56,17 @@ impl eframe::App for VnmApp {
 
             UiMode::Hard => {
                 hard_mode::show(ui, &mut self.state);
+            }
+
+            UiMode::Debug => {
+                if self.state.debug.is_none() {
+                    self.state.debug = Some(crate::debugger::debug::Debug::new());
+                }
+
+                if let Some(mut debug) = self.state.debug.take() {
+                    debug_mode::show(ui, &mut self.state, &mut debug);
+                    self.state.debug = Some(debug);
+                }
             }
         });
 

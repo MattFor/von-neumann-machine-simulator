@@ -1,9 +1,11 @@
 use crate::machine::machine::Machine;
+use crate::debugger::debug::Debug as DebugState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiMode {
     Easy,
     Hard,
+    Debug,
 }
 
 pub struct AppState {
@@ -24,6 +26,8 @@ pub struct AppState {
     pub show_console: bool,
 
     pub status_message: String,
+
+    pub debug: Option<DebugState>,
 }
 
 impl AppState {
@@ -44,6 +48,8 @@ impl AppState {
             show_console: true,
 
             status_message: "Ready".to_string(),
+
+            debug: None,
         }
     }
 }
