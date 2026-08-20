@@ -18,7 +18,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
                 let opcode = instruction.opcode;
                 let operand = instruction.operand;
 
-                ui.label(format!("{row:02X}"));
+                ui.label(format!("{row:02}"));
 
                 let mut selected_opcode = opcode;
                 egui::ComboBox::from_id_salt(("opcode", row))
@@ -43,9 +43,28 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
                     machine.memory.write(row, _raw);
                 }
 
-                let mut operand_value = format!("{}", operand);
-                let response = ui.add(egui::TextEdit::singleline(&mut operand_value));
-                // TODO
+
+                let id = ui.make_persistent_id(("operand_edit", row));
+
+                let mut operand_buffer = ui.data(|data| data.get_temp(id)).unwrap_or(operand.to_string());  
+
+                let response = ui.add(egui::TextEdit::singleline(&mut operand_buffer));
+
+                ui.data_mut(|data| data.insert_temp(id, operand_buffer.clone()));
+
+                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
+                    if let Ok(parsed_operand) = operand_buffer.parse::<i32>() {
+                        let _instruction = crate::machine::Instruction {
+                            opcode: selected_opcode,
+                            operand: parsed_operand,
+                        };
+
+                        let _raw: i32 = crate::machine::encode(_instruction);
+
+                        machine.memory.write(row, _raw);
+                    }
+                }
+                
 
                 ui.label(format!("{:?}", instruction.operand));
                 ui.label(format!("{:?}", instruction.opcode));
