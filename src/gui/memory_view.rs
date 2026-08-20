@@ -2,7 +2,7 @@ use egui::Ui;
 
 use crate::machine::machine::Machine;
 
-pub fn show(ui: &mut Ui, machine: &Machine) {
+pub fn show(ui: &mut Ui, machine: &mut Machine) {
     egui::ScrollArea::vertical().show(ui, |ui| {
         egui::Grid::new("memory_grid").striped(true).show(ui, |ui| {
             ui.label("Adr");
@@ -15,29 +15,37 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             for row in 0..255 {
                 let raw = machine.memory.data()[row];
                 let instruction = crate::machine::decode(raw);
-                let opcode = (raw >> 8) & 0xff;
-                let operand = raw & 0xff;
+                let opcode = instruction.opcode;
+                let operand = instruction.operand;
 
                 ui.label(format!("{row:02X}"));
 
-                #[allow(unused_mut)] let mut selected_opcode = opcode;
+                let mut selected_opcode = opcode;
                 egui::ComboBox::from_id_salt(("opcode", row))
                     .selected_text(format!("{:?}", selected_opcode))
                     .show_ui(ui, |ui| {
-                        // TODO
-                        // for op in 0..10 {
-                        //     ui.selectable_value(&mut selected_opcode, op.to_string(), format!("{:02X} - UNFINISHED", op));
-                        // }
+                        for _opcode in crate::machine::Opcode::iter() {
+                            let value = _opcode as i32;
+                            let key = format!("{:?}", _opcode);
+
+                            ui.selectable_value(&mut selected_opcode, _opcode, format!("{} - {}", value, key));
+                        }
                     });
 
-                let mut operand_value = format!("{:02X}", operand);
+                if selected_opcode != opcode {
+                    let _instruction = crate::machine::Instruction {
+                        opcode: selected_opcode,
+                        operand: operand,
+                    };
+
+                    let _raw: i32 = crate::machine::encode(_instruction);
+
+                    machine.memory.write(row, _raw);
+                }
+
+                let mut operand_value = format!("{}", operand);
                 let response = ui.add(egui::TextEdit::singleline(&mut operand_value));
-                if response.changed() {
-                    // TODO
-                }
-                if response.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-                    // TODO
-                }
+                // TODO
 
                 ui.label(format!("{:?}", instruction.operand));
                 ui.label(format!("{:?}", instruction.opcode));

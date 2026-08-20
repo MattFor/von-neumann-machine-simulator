@@ -22,3 +22,7 @@ pub fn decode(value: i32) -> Instruction {
 
     Instruction { opcode, operand }
 }
+
+pub fn encode(instruction: Instruction) -> i32 {
+    ((instruction.opcode as i32) << 8) | (instruction.operand & 0xff)
+}

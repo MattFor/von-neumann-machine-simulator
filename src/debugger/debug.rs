@@ -62,8 +62,7 @@ impl Debug {
             arguments[2].parse::<i32>().unwrap()
         };
 
-	    // Comparison useless due to type limits - TODO: fix
-        if address >= 255 || address < 0 {
+        if address >= 255 {
             return false;
         }
 

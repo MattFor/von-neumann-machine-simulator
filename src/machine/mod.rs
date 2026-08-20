@@ -6,5 +6,5 @@ mod memory;
 mod registers;
 
 pub use executor::execute;
-pub use instruction_decoder::decode;
+pub use instruction_decoder::{decode, encode};
 pub use instructions::{Instruction, Opcode};
