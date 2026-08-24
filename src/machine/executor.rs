@@ -8,30 +8,47 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
         Opcode::Nop => {}
 
         Opcode::Load => {
-            machine.cpu.acc = machine.memory.read(instruction.operand as usize);
+            machine.cpu.mar = instruction.operand as u16;
+
+            let value = machine.memory.read(machine.cpu.mar as usize);
+
+            machine.cpu.set_mbr(value);
+            machine.cpu.set_acc(machine.cpu.mbr);
         }
 
         Opcode::Store => {
+            machine.cpu.mar = instruction.operand as u16;
+
+            machine.cpu.set_mbr(machine.cpu.acc);
             machine
                 .memory
-                .write(instruction.operand as usize, machine.cpu.acc);
+                .write(machine.cpu.mar as usize, machine.cpu.mbr);
         }
 
         Opcode::Add => {
-            machine.cpu.acc += instruction.operand;
+            machine
+                .cpu
+                .set_acc(machine.cpu.acc.saturating_add(instruction.operand));
         }
 
         Opcode::Sub => {
-            machine.cpu.acc -= instruction.operand;
+            machine
+                .cpu
+                .set_acc(machine.cpu.acc.saturating_sub(instruction.operand));
         }
 
         Opcode::Mul => {
-            machine.cpu.acc *= instruction.operand;
+            machine
+                .cpu
+                .set_acc(machine.cpu.acc.saturating_mul(instruction.operand));
         }
 
         Opcode::Div => {
-            if instruction.operand != 0 {
-                machine.cpu.acc /= instruction.operand;
+            if instruction.operand == 0 {
+                machine.output.push_str("error: division by zero\n");
+                machine.halted = true;
+            } else {
+                machine.cpu.set_acc(machine.cpu.acc / instruction.operand);
             }
         }
 
@@ -53,8 +70,6 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
             machine.halted = true;
         }
 
-        Opcode::Input => {
-            // Handle input later
-        }
+        Opcode::Input => {}
     }
 }

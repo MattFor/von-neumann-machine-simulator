@@ -12,11 +12,21 @@ impl Memory {
     }
 
     pub fn read(&self, address: usize) -> i32 {
-        self.data[address]
+        self.data.get(address).copied().unwrap_or(0)
     }
 
     pub fn write(&mut self, address: usize, value: i32) {
-        self.data[address] = value;
+        if let Some(cell) = self.data.get_mut(address) {
+            *cell = value;
+        }
+    }
+
+    pub fn load(&mut self, values: &[i32]) {
+        self.reset();
+
+        let length = values.len().min(MEMORY_SIZE);
+
+        self.data[..length].copy_from_slice(&values[..length]);
     }
 
     pub fn reset(&mut self) {

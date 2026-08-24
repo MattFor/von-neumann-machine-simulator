@@ -1,37 +1,48 @@
 use egui::Ui;
 
-use super::gui_state::AppState;
+use super::{controls, gui_state::AppState};
 
 pub fn show(ui: &mut Ui, state: &mut AppState) {
+    controls::show(ui, state);
+
     ui.horizontal(|ui| {
-        if ui.button("Run").clicked() {
-            state.running = true;
-        }
-
-        if ui.button("Pause").clicked() {
-            state.running = false;
-        }
-
-        if ui.button("Step").clicked() {
-            state.machine.step();
-        }
-
-        if ui.button("Reset").clicked() {
-            state.machine.reset();
-        }
+        ui.label("Views:");
+        ui.checkbox(&mut state.show_memory, "Memory");
+        ui.checkbox(&mut state.show_registers, "Registers");
+        ui.checkbox(&mut state.show_cpu, "CPU");
+        ui.checkbox(&mut state.show_console, "Console");
     });
 
     ui.separator();
 
-    ui.columns(3, |columns| {
-        crate::gui::register_view::show(&mut columns[0], &state.machine);
+    let panels = [state.show_memory, state.show_registers, state.show_cpu]
+        .iter()
+        .filter(|shown| **shown)
+        .count();
 
-        crate::gui::memory_view::show(&mut columns[1], &state.machine);
+    if panels > 0 {
+        ui.columns(panels, |columns| {
+            let mut column = 0;
 
-        crate::gui::cpu_view::show(&mut columns[2], &state.machine);
-    });
+            if state.show_memory {
+                crate::gui::memory_view::show(&mut columns[column], &mut state.machine);
+                column += 1;
+            }
 
-    ui.separator();
+            if state.show_registers {
+                crate::gui::register_view::show(&mut columns[column], &state.machine);
+                column += 1;
+            }
 
-    crate::gui::console_view::show(ui, &state.machine);
+            if state.show_cpu {
+                crate::gui::cpu_view::show(&mut columns[column], &mut state.machine);
+            }
+        });
+    }
+
+    if state.show_console {
+        ui.separator();
+
+        crate::gui::console_view::show(ui, &mut state.machine);
+    }
 }
