@@ -1,9 +1,8 @@
 const VALUE_MIN: i32 = 0;
 const VALUE_MAX: i32 = 19_999;
 
-// MBR and ACC should have same boundaries!
-const MBR_MIN: i32 = VALUE_MIN; // unused: should be used when implementing setter for mbr
-const MBR_MAX: i32 = VALUE_MAX; // unused: should be used when implementing setter for mbr
+const MBR_MIN: i32 = VALUE_MIN;
+const MBR_MAX: i32 = VALUE_MAX;
 
 pub const ACC_MIN: i32 = VALUE_MIN;
 pub const ACC_MAX: i32 = VALUE_MAX;
@@ -29,5 +28,13 @@ impl Registers {
 
     pub fn reset(&mut self) {
         *self = Self::new();
+    }
+
+    pub fn set_acc(&mut self, value: i32) {
+        self.acc = value.clamp(ACC_MIN, ACC_MAX);
+    }
+
+    pub fn set_mbr(&mut self, value: i32) {
+        self.mbr = value.clamp(MBR_MIN, MBR_MAX);
     }
 }

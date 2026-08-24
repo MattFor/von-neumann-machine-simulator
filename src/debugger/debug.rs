@@ -7,6 +7,7 @@
 // example: `cargo run --features debug-mode`
 
 use crate::app::gui_state::AppState;
+use crate::machine::MEMORY_SIZE;
 
 pub struct Debug {
     pub command_history: Vec<(String, bool)>,
@@ -33,55 +34,79 @@ impl Debug {
         match command {
             "SetMem" => {
                 let valid = self.set_memory(state, raw_split);
-                self.command_history.push((raw.clone(), valid));
+                self.command_history.push((raw, valid));
             }
             "SetAcc" => {
                 let valid = self.set_accumulator(state, raw_split);
-                self.command_history.push((raw.clone(), valid));
+                self.command_history.push((raw, valid));
+            }
+            "SetPc" => {
+                let valid = self.set_program_counter(state, raw_split);
+                self.command_history.push((raw, valid));
+            }
+            "Reset" => {
+                state.reset();
+                self.command_history.push((raw, true));
             }
             "Help" => {
-                self.command_history.push((raw.clone(), true));
+                self.command_history.push((raw, true));
                 self.help()
             }
             _ => {
-                self.command_history.push((raw.clone(), false));
+                self.command_history.push((raw, false));
             }
         }
     }
 
     fn set_memory(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
-        if arguments.len() <= 2 {
+        if arguments.len() < 3 {
             return false;
         }
 
-        let address: usize = arguments[1].parse().unwrap();
-
-        let value = if arguments[2].starts_with("0x") {
-            i32::from_str_radix(arguments[2].trim_start_matches("0x"), 16).unwrap()
-        } else {
-            arguments[2].parse::<i32>().unwrap()
+        let (Some(address), Some(value)) = (parse_value(arguments[1]), parse_value(arguments[2]))
+        else {
+            return false;
         };
 
-        if address >= 255 {
+        if !(0..MEMORY_SIZE as i32).contains(&address) {
             return false;
         }
 
-        state.machine.memory.write(address, value);
+        state.machine.memory.write(address as usize, value);
 
         true
     }
 
-    // NOTE: can get out of bounds
     fn set_accumulator(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
-        if arguments.len() <= 1 {
+        if arguments.len() < 2 {
             return false;
         }
 
-        let value = arguments[1].parse::<i32>().unwrap();
+        let Some(value) = parse_value(arguments[1]) else {
+            return false;
+        };
 
-        state.machine.cpu.acc = value;
+        state.machine.cpu.set_acc(value);
 
-	    true
+        true
+    }
+
+    fn set_program_counter(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
+        if arguments.len() < 2 {
+            return false;
+        }
+
+        let Some(value) = parse_value(arguments[1]) else {
+            return false;
+        };
+
+        if !(0..MEMORY_SIZE as i32).contains(&value) {
+            return false;
+        }
+
+        state.machine.cpu.pc = value as u16;
+
+        true
     }
 
     pub fn help(&mut self) {
@@ -98,10 +123,24 @@ impl Debug {
         self.command_history.push((" ".to_string(), false));
         self.command_history
             .push(("Available Commands:".to_string(), true));
+        self.command_history.push((
+            format!("SetMem <ADDRESS [0-{}]> <VALUE DEC/HEX>", MEMORY_SIZE - 1),
+            true,
+        ));
         self.command_history
-            .push(("SetMem <ADDRESS [0-255]> <VALUE DEC/HEX>".to_string(), true));
+            .push(("SetAcc <VALUE DEC/HEX>".to_string(), true));
         self.command_history
-            .push(("SetAcc <VALUE DEC>".to_string(), true));
+            .push((format!("SetPc <ADDRESS [0-{}]>", MEMORY_SIZE - 1), true));
+        self.command_history.push(("Reset".to_string(), true));
         self.command_history.push(("Help".to_string(), true));
+    }
+}
+
+fn parse_value(raw: &str) -> Option<i32> {
+    let raw = raw.trim();
+
+    match raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
+        Some(hex) => i32::from_str_radix(hex, 16).ok(),
+        None => raw.parse().ok(),
     }
 }

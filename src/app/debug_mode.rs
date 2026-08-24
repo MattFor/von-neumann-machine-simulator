@@ -33,7 +33,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, debug: &mut DebugState) {
                     } else {
                         egui::Color32::RED
                     };
-	                
+
                     ui.label(egui::RichText::new(line).color(color));
                 }
             });

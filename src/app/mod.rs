@@ -1,3 +1,4 @@
+pub mod controls;
 pub mod debug_mode;
 pub mod easy_mode;
 pub mod gui_state;
@@ -49,6 +50,17 @@ impl eframe::App for VnmApp {
             });
         });
 
+        egui::Panel::bottom("status_bar").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(&self.state.status_message);
+
+                if let Some(name) = &self.state.program_name {
+                    ui.separator();
+                    ui.label(format!("Program: {name}"));
+                }
+            });
+        });
+
         egui::CentralPanel::default().show(ui, |ui| match self.state.mode {
             UiMode::Easy => {
                 easy_mode::show(ui, &mut self.state);
@@ -59,11 +71,11 @@ impl eframe::App for VnmApp {
             }
 
             UiMode::Debug => {
-                if self.state.debug.is_none() {
-                    self.state.debug = Some(crate::debugger::debug::Debug::new());
-                }
-
                 if let Some(mut debug) = self.state.debug.take() {
+                    debug_mode::show(ui, &mut self.state, &mut debug);
+                    self.state.debug = Some(debug);
+                } else {
+                    let mut debug = crate::debugger::debug::Debug::new();
                     debug_mode::show(ui, &mut self.state, &mut debug);
                     self.state.debug = Some(debug);
                 }
@@ -71,9 +83,19 @@ impl eframe::App for VnmApp {
         });
 
         if self.state.running {
-            self.state.machine.step();
+            if self.state.halted() {
+                self.state.running = false;
+                self.state.status_message = "Halted".to_string();
+            } else {
+                self.state.machine.run_steps(self.state.speed);
 
-            ui.ctx().request_repaint();
+                if self.state.halted() {
+                    self.state.running = false;
+                    self.state.status_message = "Halted".to_string();
+                } else {
+                    ui.ctx().request_repaint();
+                }
+            }
         }
     }
 }
