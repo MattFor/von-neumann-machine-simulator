@@ -83,13 +83,11 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             .width(110.0)
                             .selected_text(format!("{opcode:?}"))
                             .show_ui(ui, |ui| {
-                                for candidate in Opcode::iter() {
-                                    let value = candidate as i32;
-
+                                for (value, _opcode) in crate::machine::OPCODES {
                                     ui.selectable_value(
                                         &mut selected_opcode,
-                                        candidate,
-                                        format!("{value:02X} - {candidate:?}"),
+                                        _opcode,
+                                        format!("{value:02X} - {_opcode:?}"),
                                     );
                                 }
                             });
