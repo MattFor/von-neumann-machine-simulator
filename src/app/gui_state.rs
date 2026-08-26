@@ -1,6 +1,7 @@
 use crate::debugger::debug::Debug as DebugState;
 use crate::machine::machine::Machine;
 use crate::program::program::Program;
+use std::time::Instant;
 
 pub const MIN_SPEED: usize = 1;
 pub const MAX_SPEED: usize = 10_000;
@@ -32,6 +33,9 @@ pub struct AppState {
     pub status_message: String,
 
     pub debug: Option<DebugState>,
+
+    pub last_tick: std::time::Instant,
+    pub time_accumulator: f64,
 }
 
 impl AppState {
@@ -54,6 +58,9 @@ impl AppState {
             status_message: "Ready".to_string(),
 
             debug: None,
+
+            last_tick: Instant::now(),
+            time_accumulator: 0.0,
         }
     }
 

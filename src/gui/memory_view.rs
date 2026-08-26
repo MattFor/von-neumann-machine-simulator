@@ -67,7 +67,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                     // NOTE: pc offset by one to avoid pointing to the header
                     // this is kinda bad design. In the future move header
                     // out of the grid. For now I guess it's just fine.
-                    if pc >= first_address && row == (pc - first_address + 1) {
+                    if pc >= first_address && row == (pc - first_address) {
                         Some(CURRENT_BLOCK_HIGHLIGHT_COLOR)
                     } else {
                         None
@@ -82,7 +82,9 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
 
                         ui.add_sized(
                             [column_width, row_height],
-                            egui::Label::new(egui::RichText::new(format!("{address:04X}")).monospace()),
+                            egui::Label::new(
+                                egui::RichText::new(format!("{address:04X}")).monospace(),
+                            ),
                         );
 
                         // Opcode display and edit
@@ -116,7 +118,9 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
 
                         ui.add_sized(
                             [column_width, row_height],
-                            egui::Label::new(egui::RichText::new(format!("{:04X}", raw as u16)).monospace()),
+                            egui::Label::new(
+                                egui::RichText::new(format!("{:04X}", raw as u16)).monospace(),
+                            ),
                         );
 
                         ui.end_row();
