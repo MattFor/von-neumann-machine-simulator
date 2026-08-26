@@ -6,6 +6,7 @@ use crate::machine::{Instruction, Opcode, decode, encode, execute};
 const VISIBLE_CELLS: usize = 256;
 const CURRENT_BLOCK_HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const DEFAULT_ADDRESS: &str = "0";
+const COLUMN_HEADERS: [&str; 4] = ["Adr", "Asm", "Opnd", "Raw"];
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("Memory");
@@ -44,6 +45,13 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
 fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+    let column_width = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0; // 4 columns, 3 gaps
+
+    egui::Grid::new("memory_header")
+        .striped(true)
+        .show(ui, |ui| {
+            print_headers(ui, row_height, column_width);
+        });
 
     egui::ScrollArea::vertical()
         .id_salt("memory_scroll")
@@ -66,21 +74,21 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                     }
                 })
                 .show(ui, |ui| {
-                    // NOTE: move header out of current grid!
-                    print_headers(ui);
-
                     for address in rows {
                         let raw = machine.memory.read(address);
                         let instruction = decode(raw);
                         let opcode = instruction.opcode;
                         let mut operand = instruction.operand;
 
-                        ui.monospace(format!("{address:04X}"));
+                        ui.add_sized(
+                            [column_width, row_height],
+                            egui::Label::new(egui::RichText::new(format!("{address:04X}")).monospace()),
+                        );
 
                         // Opcode display and edit
                         let mut selected_opcode = opcode;
                         egui::ComboBox::from_id_salt(("opcode", address))
-                            .width(110.0)
+                            .width(column_width)
                             .selected_text(format!("{opcode:?}"))
                             .show_ui(ui, |ui| {
                                 for (value, _opcode) in crate::machine::OPCODES {
@@ -94,7 +102,8 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
 
                         // Operand display and edit
                         let changed = ui
-                            .add(
+                            .add_sized(
+                                [column_width, row_height],
                                 egui::DragValue::new(&mut operand)
                                     .range(0..=255)
                                     .hexadecimal(2, false, true),
@@ -105,7 +114,10 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             update_memory_cell(machine, address, selected_opcode, operand);
                         }
 
-                        ui.monospace(format!("{:04X}", raw as u16));
+                        ui.add_sized(
+                            [column_width, row_height],
+                            egui::Label::new(egui::RichText::new(format!("{:04X}", raw as u16)).monospace()),
+                        );
 
                         ui.end_row();
                     }
@@ -119,10 +131,11 @@ fn update_memory_cell(machine: &mut Machine, address: usize, opcode: Opcode, ope
     machine.memory.write(address, raw);
 }
 
-fn print_headers(ui: &mut Ui) {
-    ui.label("Adr");
-    ui.label("Asm (Op)");
-    ui.label("Opnd");
-    ui.label("Raw");
-    ui.end_row();
+fn print_headers(ui: &mut Ui, row_height: f32, column_width: f32) {
+    for header in COLUMN_HEADERS {
+        ui.add_sized(
+            [column_width, row_height],
+            egui::Label::new(egui::RichText::new(header).monospace()),
+        );
+    }
 }
