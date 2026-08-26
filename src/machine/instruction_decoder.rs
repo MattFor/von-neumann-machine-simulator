@@ -6,8 +6,8 @@ pub fn decode(value: i32) -> Instruction {
 
     let opcode = OPCODES
         .iter()
-        .find(|(candidate, _)| *candidate == code)
-        .map_or(Opcode::Nop, |(_, opcode)| *opcode);
+        .find(|candidate| candidate.value == code)
+        .map_or(Opcode::Nop, |candidate| candidate.opcode);
 
     Instruction { opcode, operand }
 }

@@ -6,7 +6,30 @@ use crate::machine::{Instruction, Opcode, decode, encode, execute};
 const VISIBLE_CELLS: usize = 256;
 const CURRENT_BLOCK_HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const DEFAULT_ADDRESS: &str = "0";
-const COLUMN_HEADERS: [&str; 4] = ["Adr", "Asm", "Opnd", "Raw"];
+
+pub struct Header {
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+const COLUMN_HEADERS: [Header; 4] = [
+    Header {
+        label: "Adr",
+        description: "Address",
+    },
+    Header {
+        label: "Asm",
+        description: "Opcode",
+    },
+    Header {
+        label: "Opnd",
+        description: "Operand (value)",
+    },
+    Header {
+        label: "Raw",
+        description: "Raw word",
+    },
+];
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("Memory");
@@ -64,9 +87,6 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
             egui::Grid::new("memory_grid")
                 .striped(true)
                 .with_row_color(move |row, _style| {
-                    // NOTE: pc offset by one to avoid pointing to the header
-                    // this is kinda bad design. In the future move header
-                    // out of the grid. For now I guess it's just fine.
                     if pc >= first_address && row == (pc - first_address) {
                         Some(CURRENT_BLOCK_HIGHLIGHT_COLOR)
                     } else {
@@ -84,7 +104,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             [column_width, row_height],
                             egui::Label::new(
                                 egui::RichText::new(format!("{address:04X}")).monospace(),
-                            ),
+                            ).truncate(),
                         );
 
                         // Opcode display and edit
@@ -92,13 +112,16 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                         egui::ComboBox::from_id_salt(("opcode", address))
                             .width(column_width)
                             .selected_text(format!("{opcode:?}"))
+                            .truncate()
                             .show_ui(ui, |ui| {
-                                for (value, _opcode) in crate::machine::OPCODES {
-                                    ui.selectable_value(
+                                for candidate in crate::machine::OPCODES {
+                                    let r = ui.selectable_value(
                                         &mut selected_opcode,
-                                        _opcode,
-                                        format!("{value:02X} - {_opcode:?}"),
+                                        candidate.opcode,
+                                        format!("{:02X} - {:?}", candidate.value, candidate.opcode),
                                     );
+
+                                    r.on_hover_text(format!("{:?} - {}", candidate.opcode, candidate.description));
                                 }
                             });
 
@@ -120,7 +143,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             [column_width, row_height],
                             egui::Label::new(
                                 egui::RichText::new(format!("{:04X}", raw as u16)).monospace(),
-                            ),
+                            ).truncate(),
                         );
 
                         ui.end_row();
@@ -137,9 +160,13 @@ fn update_memory_cell(machine: &mut Machine, address: usize, opcode: Opcode, ope
 
 fn print_headers(ui: &mut Ui, row_height: f32, column_width: f32) {
     for header in COLUMN_HEADERS {
-        ui.add_sized(
+        let r = ui.add_sized(
             [column_width, row_height],
-            egui::Label::new(egui::RichText::new(header).monospace()),
+            egui::Label::new(
+                egui::RichText::new(header.label).monospace()
+            ).truncate(),
         );
+
+        r.on_hover_text(header.description);
     }
 }
