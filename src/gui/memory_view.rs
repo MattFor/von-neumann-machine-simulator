@@ -104,7 +104,8 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             [column_width, row_height],
                             egui::Label::new(
                                 egui::RichText::new(format!("{address:04X}")).monospace(),
-                            ).truncate(),
+                            )
+                            .truncate(),
                         );
 
                         // Opcode display and edit
@@ -121,7 +122,10 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                                         format!("{:02X} - {:?}", candidate.value, candidate.opcode),
                                     );
 
-                                    r.on_hover_text(format!("{:?} - {}", candidate.opcode, candidate.description));
+                                    r.on_hover_text(format!(
+                                        "{:?} - {}",
+                                        candidate.opcode, candidate.description
+                                    ));
                                 }
                             });
 
@@ -143,7 +147,8 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             [column_width, row_height],
                             egui::Label::new(
                                 egui::RichText::new(format!("{:04X}", raw as u16)).monospace(),
-                            ).truncate(),
+                            )
+                            .truncate(),
                         );
 
                         ui.end_row();
@@ -162,9 +167,7 @@ fn print_headers(ui: &mut Ui, row_height: f32, column_width: f32) {
     for header in COLUMN_HEADERS {
         let r = ui.add_sized(
             [column_width, row_height],
-            egui::Label::new(
-                egui::RichText::new(header.label).monospace()
-            ).truncate(),
+            egui::Label::new(egui::RichText::new(header.label).monospace()).truncate(),
         );
 
         r.on_hover_text(header.description);
