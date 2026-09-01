@@ -1,7 +1,8 @@
 use egui::Ui;
 
 use crate::machine::machine::Machine;
-use crate::machine::{Instruction, Opcode, decode, encode, execute};
+use crate::machine::{Instruction, Opcode, encode, execute};
+use crate::utilities::parse_value;
 
 const VISIBLE_CELLS: usize = 256;
 const CURRENT_BLOCK_HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
@@ -28,7 +29,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
         ui.data_mut(|data| data.insert_temp(id, address_bus.clone()));
 
         if ui.button("Set address bus").clicked() {
-            if let Ok(parsed_address) = address_bus.parse::<i32>() {
+            if let Some(parsed_address) = parse_value(&address_bus) {
                 execute(
                     machine,
                     Instruction {
@@ -44,6 +45,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
 fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
+    let definitions = machine.instruction_set.definitions.clone();
 
     egui::ScrollArea::vertical()
         .id_salt("memory_scroll")
@@ -71,40 +73,38 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
 
                     for address in rows {
                         let raw = machine.memory.read(address);
-                        let instruction = decode(raw);
-                        let opcode = instruction.opcode;
-                        let mut operand = instruction.operand;
+
+                        let mut code = (raw >> 8) & 0xff;
+                        let mut operand = raw & 0xff;
 
                         ui.monospace(format!("{address:04X}"));
 
-                        // Opcode display and edit
-                        let mut selected_opcode = opcode;
                         egui::ComboBox::from_id_salt(("opcode", address))
                             .width(110.0)
-                            .selected_text(format!("{opcode:?}"))
+                            .selected_text(machine.instruction_set.mnemonic(code))
                             .show_ui(ui, |ui| {
-                                for candidate in Opcode::iter() {
-                                    let value = candidate as i32;
-
+                                for definition in &definitions {
                                     ui.selectable_value(
-                                        &mut selected_opcode,
-                                        candidate,
-                                        format!("{value:02X} - {candidate:?}"),
+                                        &mut code,
+                                        definition.code,
+                                        format!(
+                                            "{:02X} - {}",
+                                            definition.code, definition.mnemonic
+                                        ),
                                     );
                                 }
                             });
 
-                        // Operand display and edit
-                        let changed = ui
-                            .add(
-                                egui::DragValue::new(&mut operand)
-                                    .range(0..=255)
-                                    .hexadecimal(2, false, true),
-                            )
-                            .changed();
+                        ui.add(
+                            egui::DragValue::new(&mut operand)
+                                .range(0..=255)
+                                .hexadecimal(2, false, true),
+                        );
 
-                        if changed || selected_opcode != opcode {
-                            update_memory_cell(machine, address, selected_opcode, operand);
+                        let updated = encode(code, operand);
+
+                        if updated != raw {
+                            machine.memory.write(address, updated);
                         }
 
                         ui.monospace(format!("{:04X}", raw as u16));
@@ -113,12 +113,6 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                     }
                 });
         });
-}
-
-fn update_memory_cell(machine: &mut Machine, address: usize, opcode: Opcode, operand: i32) {
-    let raw = encode(Instruction { opcode, operand });
-
-    machine.memory.write(address, raw);
 }
 
 fn print_headers(ui: &mut Ui) {

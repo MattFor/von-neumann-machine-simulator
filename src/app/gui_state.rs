@@ -1,4 +1,5 @@
 use crate::debugger::debug::Debug as DebugState;
+use crate::machine::InstructionSet;
 use crate::machine::machine::Machine;
 use crate::program::program::Program;
 
@@ -7,8 +8,8 @@ pub const MAX_SPEED: usize = 10_000;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiMode {
-    Easy,
-    Hard,
+    Machine,
+    Instructions,
 
     #[cfg_attr(not(feature = "debug-mode"), allow(dead_code))]
     Debug,
@@ -37,7 +38,7 @@ pub struct AppState {
 impl AppState {
     pub fn new() -> Self {
         Self {
-            mode: UiMode::Easy,
+            mode: UiMode::Machine,
 
             machine: Machine::new(),
 
@@ -63,10 +64,16 @@ impl AppState {
 
     pub fn step(&mut self) {
         self.machine.step();
+        self.sync_running();
+    }
 
+    pub fn sync_running(&mut self) {
         if self.machine.halted {
             self.running = false;
             self.status_message = "Halted".to_string();
+        } else if self.machine.waiting {
+            self.running = false;
+            self.status_message = "Waiting for input".to_string();
         }
     }
 
@@ -130,6 +137,48 @@ impl AppState {
 
             Err(error) => {
                 self.status_message = format!("Could not save program: {error}");
+            }
+        }
+    }
+
+    pub fn open_instruction_set(&mut self) {
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Instruction set", &["json"])
+            .pick_file()
+        else {
+            return;
+        };
+
+        match InstructionSet::load(&path) {
+            Ok(set) => {
+                self.status_message = format!("Loaded instruction set {}", set.name);
+                self.machine.instruction_set = set;
+            }
+
+            Err(error) => {
+                self.status_message = format!("Could not load instruction set: {error}");
+            }
+        }
+    }
+
+    pub fn save_instruction_set(&mut self) {
+        let name = self.machine.instruction_set.name.clone();
+
+        let Some(path) = rfd::FileDialog::new()
+            .add_filter("Instruction set", &["json"])
+            .set_file_name(format!("{name}.json"))
+            .save_file()
+        else {
+            return;
+        };
+
+        match self.machine.instruction_set.save(&path) {
+            Ok(()) => {
+                self.status_message = format!("Saved to {}", path.display());
+            }
+
+            Err(error) => {
+                self.status_message = format!("Could not save instruction set: {error}");
             }
         }
     }

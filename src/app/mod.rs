@@ -1,8 +1,8 @@
 pub mod controls;
 pub mod debug_mode;
-pub mod easy_mode;
 pub mod gui_state;
-pub mod hard_mode;
+pub mod instruction_mode;
+pub mod machine_mode;
 
 use eframe::egui;
 
@@ -24,20 +24,18 @@ impl eframe::App for VnmApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::Panel::top("top_menu").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("Mode:");
+                ui.label("View:");
 
-                if ui
-                    .selectable_label(self.state.mode == UiMode::Easy, "Easy")
-                    .clicked()
-                {
-                    self.state.mode = UiMode::Easy;
-                }
-
-                if ui
-                    .selectable_label(self.state.mode == UiMode::Hard, "Hard")
-                    .clicked()
-                {
-                    self.state.mode = UiMode::Hard;
+                for (mode, label) in [
+                    (UiMode::Machine, "Machine"),
+                    (UiMode::Instructions, "Instruction Set"),
+                ] {
+                    if ui
+                        .selectable_label(self.state.mode == mode, label)
+                        .clicked()
+                    {
+                        self.state.mode = mode;
+                    }
                 }
 
                 #[cfg(feature = "debug-mode")]
@@ -54,6 +52,9 @@ impl eframe::App for VnmApp {
             ui.horizontal(|ui| {
                 ui.label(&self.state.status_message);
 
+                ui.separator();
+                ui.label(format!("Set: {}", self.state.machine.instruction_set.name));
+
                 if let Some(name) = &self.state.program_name {
                     ui.separator();
                     ui.label(format!("Program: {name}"));
@@ -62,12 +63,12 @@ impl eframe::App for VnmApp {
         });
 
         egui::CentralPanel::default().show(ui, |ui| match self.state.mode {
-            UiMode::Easy => {
-                easy_mode::show(ui, &mut self.state);
+            UiMode::Machine => {
+                machine_mode::show(ui, &mut self.state);
             }
 
-            UiMode::Hard => {
-                hard_mode::show(ui, &mut self.state);
+            UiMode::Instructions => {
+                instruction_mode::show(ui, &mut self.state);
             }
 
             UiMode::Debug => {
@@ -83,18 +84,11 @@ impl eframe::App for VnmApp {
         });
 
         if self.state.running {
-            if self.state.halted() {
-                self.state.running = false;
-                self.state.status_message = "Halted".to_string();
-            } else {
-                self.state.machine.run_steps(self.state.speed);
+            self.state.machine.run_steps(self.state.speed);
+            self.state.sync_running();
 
-                if self.state.halted() {
-                    self.state.running = false;
-                    self.state.status_message = "Halted".to_string();
-                } else {
-                    ui.ctx().request_repaint();
-                }
+            if self.state.running {
+                ui.ctx().request_repaint();
             }
         }
     }

@@ -1,13 +1,22 @@
-use super::{executor::execute, instruction_decoder::decode, memory::Memory, registers::Registers};
+use std::collections::VecDeque;
+
+use super::{
+    executor::execute, instruction_decoder::decode, instructions::InstructionSet, memory::Memory,
+    registers::Registers,
+};
 
 pub struct Machine {
     pub cpu: Registers,
     pub memory: Memory,
 
+    pub instruction_set: InstructionSet,
+
     pub entry_point: u16,
 
     pub halted: bool,
+    pub waiting: bool,
 
+    pub input: VecDeque<i32>,
     pub output: String,
 }
 
@@ -17,10 +26,14 @@ impl Machine {
             cpu: Registers::new(),
             memory: Memory::new(),
 
+            instruction_set: InstructionSet::default(),
+
             entry_point: 0,
 
             halted: false,
+            waiting: false,
 
+            input: VecDeque::new(),
             output: String::new(),
         }
     }
@@ -30,6 +43,9 @@ impl Machine {
         self.cpu.pc = self.entry_point;
 
         self.halted = false;
+        self.waiting = false;
+
+        self.input.clear();
         self.output.clear();
     }
 
@@ -38,6 +54,11 @@ impl Machine {
         self.entry_point = 0;
 
         self.reset();
+    }
+
+    pub fn push_input(&mut self, value: i32) {
+        self.input.push_back(value);
+        self.waiting = false;
     }
 
     pub fn step(&mut self) {
@@ -53,14 +74,14 @@ impl Machine {
 
         self.cpu.pc = self.cpu.pc.wrapping_add(1);
 
-        let instruction = decode(raw);
+        let instruction = decode(&self.instruction_set, raw);
 
         execute(self, instruction);
     }
 
     pub fn run_steps(&mut self, steps: usize) {
         for _ in 0..steps {
-            if self.halted {
+            if self.halted || self.waiting {
                 break;
             }
 
@@ -70,11 +91,12 @@ impl Machine {
 
     pub fn current_instruction(&self) -> String {
         let raw = self.memory.read(self.cpu.pc as usize);
-        let instruction = decode(raw);
 
         format!(
-            "{:04X}  {:?} {}",
-            raw as u16, instruction.opcode, instruction.operand
+            "{:04X}  {} {}",
+            raw as u16,
+            self.instruction_set.mnemonic((raw >> 8) & 0xff),
+            raw & 0xff
         )
     }
 }
