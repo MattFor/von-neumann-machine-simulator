@@ -5,6 +5,7 @@ pub mod instruction_mode;
 pub mod machine_mode;
 
 use eframe::egui;
+use std::time::Instant;
 
 use gui_state::{AppState, UiMode};
 
@@ -84,8 +85,26 @@ impl eframe::App for VnmApp {
         });
 
         if self.state.running {
-            self.state.machine.run_steps(self.state.speed);
-            self.state.sync_running();
+            if self.state.halted() {
+                self.state.running = false;
+                self.state.status_message = "Halted".to_string();
+            } else {
+                let now = Instant::now();
+                let dt = now - self.state.last_tick;
+                self.state.last_tick = now;
+
+                self.state.time_accumulator += dt.as_secs_f64();
+                let secs_per_instruction = 1.0 / self.state.speed as f64;
+                let steps = (self.state.time_accumulator / secs_per_instruction)
+                    .floor()
+                    .min(gui_state::MAX_SPEED as f64) as usize;
+
+                self.state.machine.run_steps(steps);
+
+                self.state.time_accumulator -= steps as f64 * secs_per_instruction;
+
+                self.state.sync_running();
+            }
 
             if self.state.running {
                 ui.ctx().request_repaint();

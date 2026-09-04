@@ -44,7 +44,6 @@ impl Opcode {
         Self::ALL.iter().copied()
     }
 }
-
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
     pub opcode: Opcode,

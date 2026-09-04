@@ -18,7 +18,6 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
     egui::ScrollArea::vertical()
         .id_salt("console_scroll")
-        .max_height(160.0)
         .auto_shrink([false, false])
         .stick_to_bottom(true)
         .show(ui, |ui| {

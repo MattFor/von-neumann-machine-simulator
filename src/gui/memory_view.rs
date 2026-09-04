@@ -8,6 +8,30 @@ const VISIBLE_CELLS: usize = 256;
 const CURRENT_BLOCK_HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const DEFAULT_ADDRESS: &str = "0";
 
+pub struct Header {
+    pub label: &'static str,
+    pub description: &'static str,
+}
+
+const COLUMN_HEADERS: [Header; 4] = [
+    Header {
+        label: "Adr",
+        description: "Address",
+    },
+    Header {
+        label: "Asm",
+        description: "Opcode",
+    },
+    Header {
+        label: "Opnd",
+        description: "Operand (value)",
+    },
+    Header {
+        label: "Raw",
+        description: "Raw word",
+    },
+];
+
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("Memory");
 
@@ -46,6 +70,13 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
     let definitions = machine.instruction_set.definitions.clone();
+    let column_width = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0; // 4 columns, 3 gaps
+
+    egui::Grid::new("memory_header")
+        .striped(true)
+        .show(ui, |ui| {
+            print_headers(ui, row_height, column_width);
+        });
 
     egui::ScrollArea::vertical()
         .id_salt("memory_scroll")
@@ -58,33 +89,33 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
             egui::Grid::new("memory_grid")
                 .striped(true)
                 .with_row_color(move |row, _style| {
-                    // NOTE: pc offset by one to avoid pointing to the header
-                    // this is kinda bad design. In the future move header
-                    // out of the grid. For now I guess it's just fine.
-                    if pc >= first_address && row == (pc - first_address + 1) {
+                    if pc >= first_address && row == (pc - first_address) {
                         Some(CURRENT_BLOCK_HIGHLIGHT_COLOR)
                     } else {
                         None
                     }
                 })
                 .show(ui, |ui| {
-                    // NOTE: move header out of current grid!
-                    print_headers(ui);
-
                     for address in rows {
                         let raw = machine.memory.read(address);
 
                         let mut code = (raw >> 8) & 0xff;
                         let mut operand = raw & 0xff;
 
-                        ui.monospace(format!("{address:04X}"));
+                        ui.add_sized(
+                            [column_width, row_height],
+                            egui::Label::new(
+                                egui::RichText::new(format!("{address:04X}")).monospace(),
+                            )
+                            .truncate(),
+                        );
 
                         egui::ComboBox::from_id_salt(("opcode", address))
-                            .width(110.0)
+                            .width(column_width)
                             .selected_text(machine.instruction_set.mnemonic(code))
                             .show_ui(ui, |ui| {
                                 for definition in &definitions {
-                                    ui.selectable_value(
+                                    let response = ui.selectable_value(
                                         &mut code,
                                         definition.code,
                                         format!(
@@ -92,10 +123,16 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                                             definition.code, definition.mnemonic
                                         ),
                                     );
+
+                                    response.on_hover_text(format!(
+                                        "{} (code {:02X})",
+                                        definition.mnemonic, definition.code
+                                    ));
                                 }
                             });
 
-                        ui.add(
+                        ui.add_sized(
+                            [column_width, row_height],
                             egui::DragValue::new(&mut operand)
                                 .range(0..=255)
                                 .hexadecimal(2, false, true),
@@ -107,7 +144,13 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             machine.memory.write(address, updated);
                         }
 
-                        ui.monospace(format!("{:04X}", raw as u16));
+                        ui.add_sized(
+                            [column_width, row_height],
+                            egui::Label::new(
+                                egui::RichText::new(format!("{:04X}", raw as u16)).monospace(),
+                            )
+                            .truncate(),
+                        );
 
                         ui.end_row();
                     }
@@ -115,10 +158,13 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
         });
 }
 
-fn print_headers(ui: &mut Ui) {
-    ui.label("Adr");
-    ui.label("Asm (Op)");
-    ui.label("Opnd");
-    ui.label("Raw");
-    ui.end_row();
+fn print_headers(ui: &mut Ui, row_height: f32, column_width: f32) {
+    for header in COLUMN_HEADERS {
+        let r = ui.add_sized(
+            [column_width, row_height],
+            egui::Label::new(egui::RichText::new(header.label).monospace()).truncate(),
+        );
+
+        r.on_hover_text(header.description);
+    }
 }

@@ -10,9 +10,12 @@ use super::instructions::{Instruction, InstructionSet};
 // second one extracts operand byte
 // then both are converted into Instruction
 pub fn decode(set: &InstructionSet, value: i32) -> Instruction {
-	Instruction { opcode: set.opcode((value >> 8) & 0xff), operand: value & 0xff }
+    Instruction {
+        opcode: set.opcode((value >> 8) & 0xff),
+        operand: value & 0xff,
+    }
 }
 
 pub fn encode(code: i32, operand: i32) -> i32 {
-	((code & 0xff) << 8) | (operand & 0xff)
+    ((code & 0xff) << 8) | (operand & 0xff)
 }
