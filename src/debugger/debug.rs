@@ -1,13 +1,6 @@
-// NOTE: debug mode is unsafe atp and using commands might crash.
-// Use only when you know what you're doing
-
-// Debug mode is not initialized until Debug mode tab is clicked
-
-// To run use feature debug-mode
-// example: `cargo run --features debug-mode`
-
 use crate::app::gui_state::AppState;
 use crate::machine::MEMORY_SIZE;
+use crate::utilities::parse_value;
 
 pub struct Debug {
     pub command_history: Vec<(String, bool)>,
@@ -133,14 +126,5 @@ impl Debug {
             .push((format!("SetPc <ADDRESS [0-{}]>", MEMORY_SIZE - 1), true));
         self.command_history.push(("Reset".to_string(), true));
         self.command_history.push(("Help".to_string(), true));
-    }
-}
-
-fn parse_value(raw: &str) -> Option<i32> {
-    let raw = raw.trim();
-
-    match raw.strip_prefix("0x").or_else(|| raw.strip_prefix("0X")) {
-        Some(hex) => i32::from_str_radix(hex, 16).ok(),
-        None => raw.parse().ok(),
     }
 }

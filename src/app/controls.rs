@@ -1,4 +1,5 @@
 use egui::Ui;
+use std::time::Instant;
 
 use super::gui_state::{AppState, MAX_SPEED, MIN_SPEED};
 
@@ -20,6 +21,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             .add_enabled(!state.running && !halted, egui::Button::new("Run"))
             .clicked()
         {
+            state.last_tick = Instant::now();
             state.running = true;
             state.status_message = "Running".to_string();
         }

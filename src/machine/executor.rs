@@ -70,6 +70,13 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
             machine.halted = true;
         }
 
-        Opcode::Input => {}
+        Opcode::Input => match machine.input.pop_front() {
+            Some(value) => machine.cpu.set_acc(value),
+
+            None => {
+                machine.waiting = true;
+                machine.cpu.pc = machine.cpu.pc.wrapping_sub(1);
+            }
+        },
     }
 }

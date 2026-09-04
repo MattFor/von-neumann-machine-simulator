@@ -1,17 +1,21 @@
-use super::instructions::{Instruction, OPCODES, Opcode};
+use super::instructions::{Instruction, InstructionSet};
 
-pub fn decode(value: i32) -> Instruction {
-    let code = (value >> 8) & 0xff;
-    let operand = value & 0xff;
-
-    let opcode = OPCODES
-        .iter()
-        .find(|(candidate, _)| *candidate == code)
-        .map_or(Opcode::Nop, |(_, opcode)| *opcode);
-
-    Instruction { opcode, operand }
+// 0x1234
+// 0x12  - opcode
+// 34    - operand
+// >> 8  - bitshift by 8 bits
+// 0x1234 -\> 0x0012
+// after & 0xff it keeps the lowest 8 bits (0x12)
+// (val >> 8) & 0xff extract 1 byte (opcode byte)
+// second one extracts operand byte
+// then both are converted into Instruction
+pub fn decode(set: &InstructionSet, value: i32) -> Instruction {
+    Instruction {
+        opcode: set.opcode((value >> 8) & 0xff),
+        operand: value & 0xff,
+    }
 }
 
-pub fn encode(instruction: Instruction) -> i32 {
-    ((instruction.opcode as i32) << 8) | (instruction.operand & 0xff)
+pub fn encode(code: i32, operand: i32) -> i32 {
+    ((code & 0xff) << 8) | (operand & 0xff)
 }
