@@ -41,18 +41,24 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
                                 .desired_width(110.0),
                         );
 
-                        egui::ComboBox::from_id_salt(("operation", index))
+                        let operation_response = egui::ComboBox::from_id_salt(("operation", index))
                             .width(110.0)
                             .selected_text(format!("{:?}", definition.opcode))
                             .show_ui(ui, |ui| {
                                 for candidate in Opcode::iter() {
-                                    ui.selectable_value(
+                                    let response = ui.selectable_value(
                                         &mut definition.opcode,
                                         candidate,
                                         format!("{candidate:?}"),
                                     );
+
+                                    response.on_hover_text(candidate.description());
                                 }
                             });
+
+                        operation_response
+                            .response
+                            .on_hover_text(definition.opcode.description());
 
                         if ui.button("Remove").clicked() {
                             removed = Some(index);

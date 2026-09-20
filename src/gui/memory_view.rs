@@ -110,7 +110,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                             .truncate(),
                         );
 
-                        egui::ComboBox::from_id_salt(("opcode", address))
+                        let combo_response = egui::ComboBox::from_id_salt(("opcode", address))
                             .width(column_width)
                             .selected_text(machine.instruction_set.mnemonic(code))
                             .show_ui(ui, |ui| {
@@ -125,11 +125,19 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
                                     );
 
                                     response.on_hover_text(format!(
-                                        "{} (code {:02X})",
-                                        definition.mnemonic, definition.code
+                                        "{} (code {:02X})\n{}",
+                                        definition.mnemonic,
+                                        definition.code,
+                                        definition.opcode.description(),
                                     ));
                                 }
                             });
+
+                        if let Some(definition) = definitions.iter().find(|d| d.code == code) {
+                            combo_response
+                                .response
+                                .on_hover_text(definition.opcode.description());
+                        }
 
                         ui.add_sized(
                             [column_width, row_height],

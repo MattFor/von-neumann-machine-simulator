@@ -52,6 +52,47 @@ impl Opcode {
     pub fn iter() -> impl Iterator<Item = Opcode> {
         Self::ALL.iter().copied()
     }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Opcode::Nop => "No operation",
+            Opcode::Load => {
+                "Read the value stored at the memory address pointed to by the operand and copy it into the accumulator"
+            }
+            Opcode::Store => {
+                "Copy the current value from the accumulator into the memory address given by the operand"
+            }
+            Opcode::Add => {
+                "Add the value stored at the memory address given by the operand to the accumulator"
+            }
+            Opcode::Sub => {
+                "Subtract the value stored at the memory address given by the operand from the accumulator"
+            }
+            Opcode::Mul => "Multiply the accumulator by the operand value",
+            Opcode::Div => "Divide the accumulator by the operand value",
+            Opcode::Jump => {
+                "Set the program counter to the address given by the operand and continue execution from there"
+            }
+            Opcode::JumpIfZero => {
+                "If the accumulator is zero, set the program counter to the address given by the operand"
+            }
+            Opcode::Input => "Read a value from input into the accumulator",
+            Opcode::Output => "Write the current value of the accumulator to the output",
+            Opcode::Inc => {
+                "Increment the value stored at the memory address given by the operand"
+            }
+            Opcode::Dec => {
+                "Decrement the value stored at the memory address given by the operand"
+            }
+            Opcode::Null => {
+                "Set the value stored at the memory address given by the operand to zero"
+            }
+            Opcode::Tst => {
+                "If the value at the memory address given by the operand is zero, skip the next instruction"
+            }
+            Opcode::Halt => "Stop the program and halt execution",
+        }
+    }
 }
 #[derive(Debug, Clone, Copy)]
 pub struct Instruction {
