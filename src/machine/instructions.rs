@@ -20,12 +20,17 @@ pub enum Opcode {
     Input = 9,
     Output = 10,
 
+    Inc = 11,
+    Dec = 12,
+    Null = 13,
+    Tst = 14,
+
     Halt = 255,
 }
 
 // Workaround for iterating through enums
 impl Opcode {
-    const ALL: [Opcode; 12] = [
+    const ALL: [Opcode; 16] = [
         Opcode::Nop,
         Opcode::Load,
         Opcode::Store,
@@ -37,6 +42,10 @@ impl Opcode {
         Opcode::JumpIfZero,
         Opcode::Input,
         Opcode::Output,
+        Opcode::Inc,
+        Opcode::Dec,
+        Opcode::Null,
+        Opcode::Tst,
         Opcode::Halt,
     ];
 
@@ -110,6 +119,10 @@ impl Default for InstructionSet {
                 (8, "JZ", Opcode::JumpIfZero),
                 (9, "IN", Opcode::Input),
                 (10, "OUT", Opcode::Output),
+                (11, "INC", Opcode::Inc),
+                (12, "DEC", Opcode::Dec),
+                (13, "NULL", Opcode::Null),
+                (14, "TST", Opcode::Tst),
                 (255, "HALT", Opcode::Halt),
             ]
             .into_iter()
