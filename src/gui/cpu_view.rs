@@ -1,30 +1,18 @@
 use egui::Ui;
 
 use crate::machine::machine::Machine;
-use crate::machine::{ACC_MAX, ACC_MIN, Instruction, Opcode, execute};
+use crate::machine::{ACC_MAX, ACC_MIN};
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("CPU");
 
     ui.horizontal(|ui| {
         if ui.button("acc++").clicked() {
-            execute(
-                machine,
-                Instruction {
-                    opcode: Opcode::Add,
-                    operand: 1,
-                },
-            );
+            machine.cpu.set_acc(machine.cpu.acc.saturating_add(1));
         }
 
         if ui.button("acc--").clicked() {
-            execute(
-                machine,
-                Instruction {
-                    opcode: Opcode::Sub,
-                    operand: 1,
-                },
-            );
+            machine.cpu.set_acc(machine.cpu.acc.saturating_sub(1));
         }
 
         if ui.button("acc:=0").clicked() {
