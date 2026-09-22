@@ -37,9 +37,21 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
     address_bus_panel(ui, machine);
 
-    ui.separator();
+    let separator_height = ui.separator().rect.height();
+    let footer_height =
+        ui.spacing().interact_size.y + 2.0 * ui.spacing().item_spacing.y + separator_height;
 
-    memory_grid_panel(ui, machine);
+    memory_grid_panel(ui, machine, footer_height);
+
+    let pc = machine.cpu.pc;
+    let raw = machine.memory.read(pc as usize);
+
+    ui.add_sized(
+        [ui.available_width(), ui.spacing().interact_size.y],
+        egui::Label::new(egui::RichText::new(format!("{raw}")).monospace()),
+    );
+
+    ui.separator();
 }
 
 fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
@@ -66,7 +78,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
     });
 }
 
-fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
+fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
     let definitions = machine.instruction_set.definitions.clone();
@@ -78,8 +90,12 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
             print_headers(ui, row_height, column_width);
         });
 
+    let scroll_height = (ui.available_height() - footer_height).max(0.0);
+
     egui::ScrollArea::vertical()
         .id_salt("memory_scroll")
+        .max_height(scroll_height)
+        .min_scrolled_height(0.0)
         .auto_shrink([false, false])
         .show_rows(ui, row_height, VISIBLE_CELLS, |ui, rows| {
             // NOTE: only the visible slice is rendered, so grid row indices are

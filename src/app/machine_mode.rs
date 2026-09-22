@@ -1,4 +1,5 @@
 use super::{controls, gui_state::AppState};
+use crate::gui::data_bus_view;
 use egui::{Color32, Ui};
 
 #[cfg(feature = "debug-mode")]
@@ -32,6 +33,17 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
     ui.separator();
 
+    let cpu_connections = ui.painter().add(egui::Shape::Noop);
+    let transfers = egui::Panel::bottom("data_bus_panel")
+        .exact_size(data_bus_view::HEIGHT)
+        .frame(egui::Frame::NONE)
+        .show_separator_line(false)
+        .show(ui, |ui| {
+            data_bus_view::show(ui, &mut state.machine, state.show_memory, state.show_cpu)
+        })
+        .inner;
+    let mut accumulator = None;
+
     let panels = [state.show_memory, state.show_registers, state.show_cpu]
         .iter()
         .filter(|shown| **shown)
@@ -57,14 +69,23 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
                     if state.show_registers {
                         debug_view(&mut columns[column], Color32::RED, |ui| {
-                            crate::gui::register_view::show(ui, &state.machine);
+                            egui::ScrollArea::vertical()
+                                .id_salt("registers_scroll")
+                                .show(ui, |ui| {
+                                    crate::gui::register_view::show(ui, &state.machine);
+                                });
                         });
                         column += 1;
                     }
 
                     if state.show_cpu {
                         debug_view(&mut columns[column], Color32::RED, |ui| {
-                            crate::gui::cpu_view::show(ui, &mut state.machine);
+                            egui::ScrollArea::vertical()
+                                .id_salt("cpu_scroll")
+                                .show(ui, |ui| {
+                                    accumulator =
+                                        crate::gui::cpu_view::show(ui, &mut state.machine);
+                                });
                         });
                     }
                 });
@@ -72,4 +93,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         );
     }
 
+    if state.show_cpu {
+        ui.painter().set(
+            cpu_connections,
+            data_bus_view::cpu_connections(transfers, accumulator),
+        );
+    }
 }
