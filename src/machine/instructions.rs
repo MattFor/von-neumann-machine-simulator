@@ -78,12 +78,8 @@ impl Opcode {
             }
             Opcode::Input => "Read a value from input into the accumulator",
             Opcode::Output => "Write the current value of the accumulator to the output",
-            Opcode::Inc => {
-                "Increment the value stored at the memory address given by the operand"
-            }
-            Opcode::Dec => {
-                "Decrement the value stored at the memory address given by the operand"
-            }
+            Opcode::Inc => "Increment the value stored at the memory address given by the operand",
+            Opcode::Dec => "Decrement the value stored at the memory address given by the operand",
             Opcode::Null => {
                 "Set the value stored at the memory address given by the operand to zero"
             }
