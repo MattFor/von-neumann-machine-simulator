@@ -5,8 +5,7 @@ mod machine;
 mod program;
 mod utilities;
 
-fn main() /*-> eframe::Result<()> */
-{
+fn main() -> eframe::Result {
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default().with_min_inner_size([854.0, 480.0]),
         ..Default::default()
@@ -17,5 +16,4 @@ fn main() /*-> eframe::Result<()> */
         options,
         Box::new(|cc| Ok(Box::new(app::VnmApp::new(cc)))),
     )
-    .expect("TODO: error message")
 }
