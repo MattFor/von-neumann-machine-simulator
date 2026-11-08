@@ -7,6 +7,7 @@ const MBR_MAX: i32 = VALUE_MAX;
 pub const ACC_MIN: i32 = VALUE_MIN;
 pub const ACC_MAX: i32 = VALUE_MAX;
 
+#[derive(Clone, Copy, PartialEq)]
 pub struct Registers {
     pub acc: i32, // accumulator
     pub pc: u16,  // program counter

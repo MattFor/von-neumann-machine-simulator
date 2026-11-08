@@ -52,7 +52,7 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
 
         Opcode::Div => {
             if instruction.operand == 0 {
-                machine.output.push_str("error: division by zero\n");
+                machine.print("error: division by zero\n");
                 machine.halted = true;
             } else {
                 machine.cpu.set_acc(machine.cpu.acc / instruction.operand);
@@ -70,7 +70,7 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
         }
 
         Opcode::Output => {
-            machine.output.push_str(&format!("{}\n", machine.cpu.acc));
+            machine.print(&format!("{}\n", machine.cpu.acc));
         }
 
         Opcode::Inc => {

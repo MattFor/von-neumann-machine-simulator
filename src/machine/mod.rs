@@ -16,8 +16,12 @@ use instruction_decoder::decode;
 use memory::Memory;
 use registers::Registers;
 
+// Output is ASCII only, so cutting at a byte offset is safe.
+const OUTPUT_LIMIT: usize = 16 * 1024;
+
 pub struct Machine {
     pub cpu: Registers,
+    pub previous: Registers, // registers before the last step
     pub memory: Memory,
 
     pub instruction_set: InstructionSet,
@@ -35,6 +39,7 @@ impl Machine {
     pub fn new() -> Self {
         Self {
             cpu: Registers::new(),
+            previous: Registers::new(),
             memory: Memory::new(),
 
             instruction_set: InstructionSet::default(),
@@ -52,6 +57,7 @@ impl Machine {
     pub fn reset(&mut self) {
         self.cpu.reset();
         self.cpu.pc = self.entry_point;
+        self.previous = self.cpu;
 
         self.halted = false;
         self.waiting = false;
@@ -72,10 +78,20 @@ impl Machine {
         self.waiting = false;
     }
 
+    pub fn print(&mut self, text: &str) {
+        self.output.push_str(text);
+
+        if self.output.len() > OUTPUT_LIMIT {
+            self.output.drain(..OUTPUT_LIMIT / 2);
+        }
+    }
+
     pub fn step(&mut self) {
         if self.halted {
             return;
         }
+
+        self.previous = self.cpu;
 
         self.cpu.mar = self.cpu.pc;
 
@@ -104,7 +120,7 @@ impl Machine {
         let raw = self.memory.read(self.cpu.pc as usize);
 
         format!(
-            "{:04X}  {} {}",
+            "{:04X}  {} {:02X}",
             raw as u16,
             self.instruction_set.mnemonic((raw >> 8) & 0xff),
             raw & 0xff
@@ -281,6 +297,31 @@ mod tests {
 
         assert_eq!(machine.cpu.acc, 0);
         assert_eq!(machine.cpu.pc, 3);
+    }
+
+    #[test]
+    fn input_waits_then_resumes_when_a_value_arrives() {
+        let mut machine = machine_with(&[word(9, 0), word(10, 0), word(255, 0)]);
+
+        machine.run_steps(10);
+
+        assert!(machine.waiting);
+        assert_eq!(machine.cpu.pc, 0);
+
+        machine.push_input(7);
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.output, "7\n");
+    }
+
+    #[test]
+    fn output_is_capped() {
+        let mut machine = machine_with(&[word(10, 0), word(7, 0)]);
+
+        machine.run_steps(OUTPUT_LIMIT * 2);
+
+        assert!(machine.output.len() <= OUTPUT_LIMIT);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;
