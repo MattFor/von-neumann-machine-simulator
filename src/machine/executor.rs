@@ -1,6 +1,6 @@
 use super::{
+    Machine,
     instructions::{Instruction, Opcode},
-    machine::Machine,
     registers::ACC_MAX,
 };
 

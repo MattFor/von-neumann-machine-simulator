@@ -1,6 +1,6 @@
 use egui::Ui;
 
-use crate::machine::machine::Machine;
+use crate::machine::Machine;
 use crate::utilities::parse_value;
 
 const CONSOLE_HEADER_AND_INPUT_HEIGHT: f32 = 56.0;

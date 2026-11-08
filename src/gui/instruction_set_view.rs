@@ -1,7 +1,7 @@
 use egui::Ui;
 
+use crate::machine::Machine;
 use crate::machine::Opcode;
-use crate::machine::machine::Machine;
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {

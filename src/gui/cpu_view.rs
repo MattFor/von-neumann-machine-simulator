@@ -1,6 +1,6 @@
 use egui::{Rect, Ui};
 
-use crate::machine::machine::Machine;
+use crate::machine::Machine;
 use crate::machine::{ACC_MAX, ACC_MIN};
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<Rect> {

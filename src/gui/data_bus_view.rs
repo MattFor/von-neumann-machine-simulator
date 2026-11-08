@@ -1,6 +1,6 @@
 use egui::{Align2, Button, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 
-use crate::machine::machine::Machine;
+use crate::machine::Machine;
 
 const COLUMN_COUNT: usize = 12;
 const TRANSFER_HEIGHT: f32 = 72.0;

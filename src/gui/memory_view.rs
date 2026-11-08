@@ -1,6 +1,6 @@
 use egui::Ui;
 
-use crate::machine::machine::Machine;
+use crate::machine::Machine;
 use crate::machine::{Instruction, Opcode, encode, execute};
 use crate::utilities::parse_value;
 

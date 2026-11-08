@@ -1,7 +1,7 @@
 use crate::debugger::debug::Debug as DebugState;
 use crate::machine::InstructionSet;
-use crate::machine::machine::Machine;
-use crate::program::program::Program;
+use crate::machine::Machine;
+use crate::program::Program;
 use std::time::Instant;
 
 pub const MIN_SPEED: usize = 1;
