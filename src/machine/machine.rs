@@ -128,7 +128,11 @@ mod tests {
 
     #[test]
     fn accumulator_stays_clamped_on_multiply() {
-        let mut machine = machine_with(&[word(3, 200), word(5, 255), word(5, 255)]);
+        let mut program = vec![word(1, 10), word(5, 255), word(5, 255)];
+        program.resize(11, 0);
+        program[10] = 200;
+
+        let mut machine = machine_with(&program);
 
         machine.run_steps(3);
 
@@ -138,6 +142,8 @@ mod tests {
     #[test]
     fn subtract_does_not_go_below_zero() {
         let mut machine = machine_with(&[word(4, 10)]);
+        machine.memory.write(10, 10);
+        machine.cpu.set_acc(5);
 
         machine.step();
 
@@ -146,7 +152,8 @@ mod tests {
 
     #[test]
     fn store_and_load_move_through_the_buffer_register() {
-        let mut machine = machine_with(&[word(3, 42), word(2, 100), word(1, 100), word(255, 0)]);
+        let mut machine = machine_with(&[word(1, 10), word(2, 100), word(1, 100), word(255, 0)]);
+        machine.memory.write(10, 42);
 
         machine.run_steps(3);
 
@@ -172,7 +179,8 @@ mod tests {
 
     #[test]
     fn run_steps_stops_at_halt() {
-        let mut machine = machine_with(&[word(3, 1), word(255, 0), word(3, 1)]);
+        let mut machine = machine_with(&[word(1, 10), word(255, 0), word(3, 10)]);
+        machine.memory.write(10, 1);
 
         machine.run_steps(100);
 
@@ -183,7 +191,8 @@ mod tests {
 
     #[test]
     fn reset_keeps_memory_and_returns_to_entry_point() {
-        let mut machine = machine_with(&[word(3, 5), word(255, 0)]);
+        let mut machine = machine_with(&[word(1, 10), word(255, 0)]);
+        machine.memory.write(10, 5);
         machine.entry_point = 0;
 
         machine.run_steps(8);
@@ -192,7 +201,7 @@ mod tests {
         assert!(!machine.halted);
         assert_eq!(machine.cpu.pc, 0);
         assert_eq!(machine.cpu.acc, 0);
-        assert_eq!(machine.memory.read(0), word(3, 5));
+        assert_eq!(machine.memory.read(0), word(1, 10));
     }
 
     #[test]
@@ -215,6 +224,52 @@ mod tests {
         machine.memory.write(MEMORY_SIZE_FOR_TESTS, 7);
 
         assert_eq!(machine.memory.read(MEMORY_SIZE_FOR_TESTS), 0);
+    }
+
+    #[test]
+    fn add_and_subtract_use_values_from_memory() {
+        let mut machine = machine_with(&[word(1, 10), word(3, 11), word(4, 10)]);
+        machine.memory.write(10, 7);
+        machine.memory.write(11, 2);
+
+        machine.run_steps(3);
+
+        assert_eq!(machine.cpu.acc, 2);
+        assert_eq!(machine.cpu.mar, 10);
+        assert_eq!(machine.cpu.mbr, 7);
+    }
+
+    #[test]
+    fn inc_and_dec_modify_memory_with_clamping() {
+        let mut machine = machine_with(&[word(11, 10), word(12, 11)]);
+        machine.memory.write(10, ACC_MAX);
+        machine.memory.write(11, 0);
+
+        machine.run_steps(2);
+
+        assert_eq!(machine.memory.read(10), ACC_MAX);
+        assert_eq!(machine.memory.read(11), 0);
+    }
+
+    #[test]
+    fn null_sets_memory_to_zero() {
+        let mut machine = machine_with(&[word(13, 10)]);
+        machine.memory.write(10, 123);
+
+        machine.step();
+
+        assert_eq!(machine.memory.read(10), 0);
+    }
+
+    #[test]
+    fn tst_skips_the_next_instruction_when_memory_is_zero() {
+        let mut machine = machine_with(&[word(14, 10), word(3, 11), word(255, 0)]);
+        machine.memory.write(11, 7);
+
+        machine.run_steps(2);
+
+        assert_eq!(machine.cpu.acc, 0);
+        assert_eq!(machine.cpu.pc, 3);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

@@ -20,12 +20,17 @@ pub enum Opcode {
     Input = 9,
     Output = 10,
 
+    Inc = 11,
+    Dec = 12,
+    Null = 13,
+    Tst = 14,
+
     Halt = 255,
 }
 
 // Workaround for iterating through enums
 impl Opcode {
-    const ALL: [Opcode; 12] = [
+    const ALL: [Opcode; 16] = [
         Opcode::Nop,
         Opcode::Load,
         Opcode::Store,
@@ -37,11 +42,52 @@ impl Opcode {
         Opcode::JumpIfZero,
         Opcode::Input,
         Opcode::Output,
+        Opcode::Inc,
+        Opcode::Dec,
+        Opcode::Null,
+        Opcode::Tst,
         Opcode::Halt,
     ];
 
     pub fn iter() -> impl Iterator<Item = Opcode> {
         Self::ALL.iter().copied()
+    }
+
+    pub const fn description(self) -> &'static str {
+        match self {
+            Opcode::Nop => "No operation",
+            Opcode::Load => {
+                "Read the value stored at the memory address pointed to by the operand and copy it into the accumulator"
+            }
+            Opcode::Store => {
+                "Copy the current value from the accumulator into the memory address given by the operand"
+            }
+            Opcode::Add => {
+                "Add the value stored at the memory address given by the operand to the accumulator"
+            }
+            Opcode::Sub => {
+                "Subtract the value stored at the memory address given by the operand from the accumulator"
+            }
+            Opcode::Mul => "Multiply the accumulator by the operand value",
+            Opcode::Div => "Divide the accumulator by the operand value",
+            Opcode::Jump => {
+                "Set the program counter to the address given by the operand and continue execution from there"
+            }
+            Opcode::JumpIfZero => {
+                "If the accumulator is zero, set the program counter to the address given by the operand"
+            }
+            Opcode::Input => "Read a value from input into the accumulator",
+            Opcode::Output => "Write the current value of the accumulator to the output",
+            Opcode::Inc => "Increment the value stored at the memory address given by the operand",
+            Opcode::Dec => "Decrement the value stored at the memory address given by the operand",
+            Opcode::Null => {
+                "Set the value stored at the memory address given by the operand to zero"
+            }
+            Opcode::Tst => {
+                "If the value at the memory address given by the operand is zero, skip the next instruction"
+            }
+            Opcode::Halt => "Stop the program and halt execution",
+        }
     }
 }
 #[derive(Debug, Clone, Copy)]
@@ -110,6 +156,10 @@ impl Default for InstructionSet {
                 (8, "JZ", Opcode::JumpIfZero),
                 (9, "IN", Opcode::Input),
                 (10, "OUT", Opcode::Output),
+                (11, "INC", Opcode::Inc),
+                (12, "DEC", Opcode::Dec),
+                (13, "NULL", Opcode::Null),
+                (14, "TST", Opcode::Tst),
                 (255, "HALT", Opcode::Halt),
             ]
             .into_iter()

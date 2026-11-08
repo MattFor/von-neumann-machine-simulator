@@ -9,6 +9,8 @@ use std::time::Instant;
 
 use gui_state::{AppState, UiMode};
 
+const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
+
 pub struct VnmApp {
     pub state: AppState,
 }
@@ -62,6 +64,14 @@ impl eframe::App for VnmApp {
                 }
             });
         });
+
+        if self.state.mode == UiMode::Machine && self.state.show_console {
+            egui::Panel::bottom("console_panel")
+                .exact_size(CONSOLE_PANEL_HEIGHT)
+                .show(ui, |ui| {
+                    crate::gui::console_view::show(ui, &mut self.state.machine);
+                });
+        }
 
         egui::CentralPanel::default().show(ui, |ui| match self.state.mode {
             UiMode::Machine => {

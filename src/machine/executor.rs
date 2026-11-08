@@ -1,6 +1,7 @@
 use super::{
     instructions::{Instruction, Opcode},
     machine::Machine,
+    registers::ACC_MAX,
 };
 
 pub fn execute(machine: &mut Machine, instruction: Instruction) {
@@ -26,15 +27,21 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
         }
 
         Opcode::Add => {
+            machine.cpu.mar = instruction.operand as u16;
+            let value = machine.memory.read(machine.cpu.mar as usize);
+            machine.cpu.set_mbr(value);
             machine
                 .cpu
-                .set_acc(machine.cpu.acc.saturating_add(instruction.operand));
+                .set_acc(machine.cpu.acc.saturating_add(machine.cpu.mbr));
         }
 
         Opcode::Sub => {
+            machine.cpu.mar = instruction.operand as u16;
+            let value = machine.memory.read(machine.cpu.mar as usize);
+            machine.cpu.set_mbr(value);
             machine
                 .cpu
-                .set_acc(machine.cpu.acc.saturating_sub(instruction.operand));
+                .set_acc(machine.cpu.acc.saturating_sub(machine.cpu.mbr));
         }
 
         Opcode::Mul => {
@@ -64,6 +71,48 @@ pub fn execute(machine: &mut Machine, instruction: Instruction) {
 
         Opcode::Output => {
             machine.output.push_str(&format!("{}\n", machine.cpu.acc));
+        }
+
+        Opcode::Inc => {
+            machine.cpu.mar = instruction.operand as u16;
+            let value = machine.memory.read(machine.cpu.mar as usize);
+            machine.cpu.set_mbr(value);
+
+            let updated = machine.cpu.mbr.saturating_add(1).min(ACC_MAX);
+            machine.cpu.set_mbr(updated);
+            machine
+                .memory
+                .write(machine.cpu.mar as usize, machine.cpu.mbr);
+        }
+
+        Opcode::Dec => {
+            machine.cpu.mar = instruction.operand as u16;
+            let value = machine.memory.read(machine.cpu.mar as usize);
+            machine.cpu.set_mbr(value);
+
+            let updated = machine.cpu.mbr.saturating_sub(1).max(0);
+            machine.cpu.set_mbr(updated);
+            machine
+                .memory
+                .write(machine.cpu.mar as usize, machine.cpu.mbr);
+        }
+
+        Opcode::Null => {
+            machine.cpu.mar = instruction.operand as u16;
+            machine.cpu.set_mbr(0);
+            machine
+                .memory
+                .write(machine.cpu.mar as usize, machine.cpu.mbr);
+        }
+
+        Opcode::Tst => {
+            machine.cpu.mar = instruction.operand as u16;
+            let value = machine.memory.read(machine.cpu.mar as usize);
+            machine.cpu.set_mbr(value);
+
+            if machine.cpu.mbr == 0 {
+                machine.cpu.pc = machine.cpu.pc.wrapping_add(1);
+            }
         }
 
         Opcode::Halt => {

@@ -3,6 +3,8 @@ use egui::Ui;
 use crate::machine::machine::Machine;
 use crate::utilities::parse_value;
 
+const CONSOLE_HEADER_AND_INPUT_HEIGHT: f32 = 56.0;
+
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {
         ui.heading("Console");
@@ -16,9 +18,12 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         }
     });
 
+    let output_height = (ui.available_height() - CONSOLE_HEADER_AND_INPUT_HEIGHT).max(0.0);
+
     egui::ScrollArea::vertical()
         .id_salt("console_scroll")
         .auto_shrink([false, false])
+        .max_height(output_height)
         .stick_to_bottom(true)
         .show(ui, |ui| {
             if machine.output.is_empty() {
