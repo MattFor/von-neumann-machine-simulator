@@ -18,14 +18,26 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
         ui.painter().add(arrow(transfer_cell(transfers, 2), true));
         ui.painter().add(arrow(transfer_cell(transfers, 3), false));
 
-        if transfer_button(ui, transfers, 2, "ram->db") {
+        if transfer_button(
+            ui,
+            transfers,
+            2,
+            "ram->db",
+            "Read the cell at PC onto the data bus",
+        ) {
             machine.cpu.mar = machine.cpu.pc;
             machine
                 .cpu
                 .set_mbr(machine.memory.read(machine.cpu.mar as usize));
         }
 
-        if transfer_button(ui, transfers, 3, "db->ram") {
+        if transfer_button(
+            ui,
+            transfers,
+            3,
+            "db->ram",
+            "Write the data bus into the cell at PC",
+        ) {
             machine.cpu.mar = machine.cpu.pc;
             machine
                 .memory
@@ -34,11 +46,23 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
     }
 
     if show_cpu {
-        if transfer_button(ui, transfers, 10, "acc->db") {
+        if transfer_button(
+            ui,
+            transfers,
+            10,
+            "acc->db",
+            "Copy the accumulator onto the data bus",
+        ) {
             machine.cpu.set_mbr(machine.cpu.acc);
         }
 
-        if transfer_button(ui, transfers, 11, "db->acc") {
+        if transfer_button(
+            ui,
+            transfers,
+            11,
+            "db->acc",
+            "Copy the data bus into the accumulator",
+        ) {
             machine.cpu.set_acc(machine.cpu.mbr);
         }
     }
@@ -159,12 +183,13 @@ fn arrow_head(tip: Pos2, half_width: f32, down: bool) -> Shape {
     )
 }
 
-fn transfer_button(ui: &mut Ui, grid: Rect, column: usize, label: &str) -> bool {
+fn transfer_button(ui: &mut Ui, grid: Rect, column: usize, label: &str, hint: &str) -> bool {
     let cell = transfer_cell(grid, column);
 
     ui.put(
         Rect::from_center_size(cell.center(), vec2((cell.width() - 4.0).min(80.0), 24.0)),
         Button::new(label),
     )
+    .on_hover_text(hint)
     .clicked()
 }

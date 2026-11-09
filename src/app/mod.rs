@@ -48,6 +48,10 @@ impl eframe::App for VnmApp {
                 {
                     self.state.mode = UiMode::Debug;
                 }
+
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    egui::widgets::global_theme_preference_switch(ui);
+                });
             });
         });
 

@@ -1,11 +1,12 @@
 use egui::Ui;
 
 use crate::machine::Machine;
-use crate::machine::{Instruction, Opcode, encode, execute};
+use crate::machine::{Instruction, MEMORY_SIZE, Opcode, encode, execute};
 use crate::utilities::parse_value;
 
 const VISIBLE_CELLS: usize = 256;
-const CURRENT_BLOCK_HIGHLIGHT_COLOR: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
+const HIGHLIGHT_DARK: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
+const HIGHLIGHT_LIGHT: egui::Color32 = egui::Color32::from_rgb(255, 225, 170);
 const DEFAULT_ADDRESS: &str = "0";
 
 pub struct Header {
@@ -27,8 +28,8 @@ const COLUMN_HEADERS: [Header; 4] = [
         description: "Operand (value)",
     },
     Header {
-        label: "Raw",
-        description: "Raw word",
+        label: "Val",
+        description: "Whole word, decimal (hover a cell for hex)",
     },
 ];
 
@@ -49,7 +50,8 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.add_sized(
         [ui.available_width(), ui.spacing().interact_size.y],
         egui::Label::new(egui::RichText::new(format!("{raw}")).monospace()),
-    );
+    )
+    .on_hover_text("Value of the cell the address bus (PC) points at");
 
     ui.separator();
 }
@@ -61,19 +63,25 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
             .data(|data| data.get_temp(id))
             .unwrap_or(DEFAULT_ADDRESS.to_string());
 
-        ui.add(egui::TextEdit::singleline(&mut address_bus).desired_width(80.0));
+        let field = ui.add(egui::TextEdit::singleline(&mut address_bus).desired_width(80.0));
         ui.data_mut(|data| data.insert_temp(id, address_bus.clone()));
 
-        if ui.button("Set address bus").clicked() {
-            if let Some(parsed_address) = parse_value(&address_bus) {
-                execute(
-                    machine,
-                    Instruction {
-                        opcode: Opcode::Jump,
-                        operand: parsed_address,
-                    },
-                );
-            }
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let button = ui
+            .button("Set address bus")
+            .on_hover_text("Point the program counter at this address (decimal or 0x hex)");
+
+        if (button.clicked() || enter)
+            && let Some(parsed_address) = parse_value(&address_bus)
+                .filter(|address| (0..MEMORY_SIZE as i32).contains(address))
+        {
+            execute(
+                machine,
+                Instruction {
+                    opcode: Opcode::Jump,
+                    operand: parsed_address,
+                },
+            );
         }
     });
 }
@@ -92,6 +100,16 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
 
     let scroll_height = (ui.available_height() - footer_height).max(0.0);
 
+    // Follow the program counter only when it moves, so manual scrolling still works.
+    let pc_id = egui::Id::new("memory_last_pc");
+    let pc_moved = ui.data_mut(|data| std::mem::replace(data.get_temp_mut_or(pc_id, pc), pc)) != pc;
+
+    let highlight = if ui.visuals().dark_mode {
+        HIGHLIGHT_DARK
+    } else {
+        HIGHLIGHT_LIGHT
+    };
+
     egui::ScrollArea::vertical()
         .id_salt("memory_scroll")
         .max_height(scroll_height)
@@ -102,11 +120,21 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
             // relative to `first_address`.
             let first_address = rows.start;
 
+            if pc_moved {
+                let pitch = row_height + ui.spacing().item_spacing.y;
+                let top = ui.max_rect().top() + (pc as f32 - first_address as f32) * pitch;
+
+                ui.scroll_to_rect(
+                    egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=top + pitch),
+                    None,
+                );
+            }
+
             egui::Grid::new("memory_grid")
                 .striped(true)
                 .with_row_color(move |row, _style| {
                     if pc >= first_address && row == (pc - first_address) {
-                        Some(CURRENT_BLOCK_HIGHLIGHT_COLOR)
+                        Some(highlight)
                     } else {
                         None
                     }
@@ -117,6 +145,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
 
                         let mut code = (raw >> 8) & 0xff;
                         let mut operand = raw & 0xff;
+                        let mut value = raw;
 
                         ui.add_sized(
                             [column_width, row_height],
@@ -162,19 +191,22 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                                 .hexadecimal(2, false, true),
                         );
 
-                        let updated = encode(code, operand);
-
-                        if updated != raw {
-                            machine.memory.write(address, updated);
-                        }
-
                         ui.add_sized(
                             [column_width, row_height],
-                            egui::Label::new(
-                                egui::RichText::new(format!("{:04X}", raw as u16)).monospace(),
-                            )
-                            .truncate(),
-                        );
+                            egui::DragValue::new(&mut value)
+                                .range(0..=0xffff)
+                                .clamp_existing_to_range(false),
+                        )
+                        .on_hover_text(format!("0x{:04X}", raw as u16));
+
+                        let updated = encode(code, operand);
+
+                        // Compared field by field so that just showing a cell never rewrites it.
+                        if updated != encode(raw >> 8, raw) {
+                            machine.memory.write(address, updated);
+                        } else if value != raw {
+                            machine.memory.write(address, value);
+                        }
 
                         ui.end_row();
                     }
