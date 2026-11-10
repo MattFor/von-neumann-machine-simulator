@@ -43,6 +43,7 @@ impl Program {
     pub fn apply(&self, machine: &mut Machine) {
         machine.memory.load(&self.memory);
         machine.entry_point = self.entry_point;
+        machine.breakpoints.clear();
         machine.reset();
     }
 }

@@ -17,7 +17,7 @@ pub struct Header {
 const COLUMN_HEADERS: [Header; 4] = [
     Header {
         label: "Adr",
-        description: "Address",
+        description: "Address (click one to toggle a breakpoint)",
     },
     Header {
         label: "Asm",
@@ -147,13 +147,28 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                         let mut operand = raw & 0xff;
                         let mut value = raw;
 
-                        ui.add_sized(
-                            [column_width, row_height],
-                            egui::Label::new(
-                                egui::RichText::new(format!("{address:04X}")).monospace(),
+                        let breakpoint = machine.breakpoints.contains(&(address as u16));
+                        let label = if breakpoint {
+                            egui::RichText::new(format!("● {address:04X}"))
+                                .color(ui.visuals().error_fg_color)
+                        } else {
+                            egui::RichText::new(format!("{address:04X}"))
+                        };
+
+                        let address_cell = ui
+                            .add_sized(
+                                [column_width, row_height],
+                                egui::Label::new(label.monospace())
+                                    .truncate()
+                                    .selectable(false)
+                                    .sense(egui::Sense::click()),
                             )
-                            .truncate(),
-                        );
+                            .on_hover_text("Click to toggle a breakpoint");
+
+                        if address_cell.clicked() && !machine.breakpoints.remove(&(address as u16))
+                        {
+                            machine.breakpoints.insert(address as u16);
+                        }
 
                         let combo_response = egui::ComboBox::from_id_salt(("opcode", address))
                             .width(column_width)

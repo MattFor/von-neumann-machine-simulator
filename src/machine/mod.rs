@@ -4,7 +4,7 @@ mod instructions;
 mod memory;
 mod registers;
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 
 pub use executor::execute;
 pub use instruction_decoder::encode;
@@ -31,6 +31,8 @@ pub struct Machine {
     pub halted: bool,
     pub waiting: bool,
 
+    pub breakpoints: HashSet<u16>,
+
     pub input: VecDeque<i32>,
     pub output: String,
 }
@@ -48,6 +50,8 @@ impl Machine {
 
             halted: false,
             waiting: false,
+
+            breakpoints: HashSet::new(),
 
             input: VecDeque::new(),
             output: String::new(),
@@ -69,6 +73,7 @@ impl Machine {
     pub fn clear(&mut self) {
         self.memory.reset();
         self.entry_point = 0;
+        self.breakpoints.clear();
 
         self.reset();
     }
@@ -106,14 +111,22 @@ impl Machine {
         execute(self, instruction);
     }
 
-    pub fn run_steps(&mut self, steps: usize) {
+    // Returns true when it stopped on a breakpoint.
+    pub fn run_steps(&mut self, steps: usize) -> bool {
         for _ in 0..steps {
             if self.halted || self.waiting {
                 break;
             }
 
             self.step();
+
+            // Checked after the step, so running from a breakpoint moves past it.
+            if !self.halted && !self.waiting && self.breakpoints.contains(&self.cpu.pc) {
+                return true;
+            }
         }
+
+        false
     }
 
     pub fn current_instruction(&self) -> String {
@@ -322,6 +335,18 @@ mod tests {
         machine.run_steps(OUTPUT_LIMIT * 2);
 
         assert!(machine.output.len() <= OUTPUT_LIMIT);
+    }
+
+    #[test]
+    fn run_stops_on_a_breakpoint_and_continues_past_it() {
+        let mut machine = Machine::new();
+        machine.breakpoints.insert(2);
+
+        assert!(machine.run_steps(10));
+        assert_eq!(machine.cpu.pc, 2);
+
+        assert!(!machine.run_steps(10));
+        assert_eq!(machine.cpu.pc, 12);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

@@ -116,7 +116,11 @@ impl eframe::App for VnmApp {
             let secs_per_instruction = 1.0 / self.state.speed as f64;
             let steps = (self.state.time_accumulator / secs_per_instruction).floor() as usize;
 
-            self.state.machine.run_steps(steps);
+            if self.state.machine.run_steps(steps) {
+                self.state.running = false;
+                self.state.status_message =
+                    format!("Breakpoint at {:04X}", self.state.machine.cpu.pc);
+            }
 
             self.state.time_accumulator -= steps as f64 * secs_per_instruction;
 
