@@ -14,7 +14,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         }
 
         if machine.waiting {
-            ui.weak("waiting for input");
+            ui.colored_label(ui.visuals().warn_fg_color, "waiting for input");
         }
     });
 
@@ -39,19 +39,35 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
         let field = ui.add(
             egui::TextEdit::singleline(&mut input)
-                .desired_width(120.0)
-                .hint_text("input"),
+                .desired_width(160.0)
+                .hint_text("numbers, then Enter"),
         );
 
-        let send = ui.button("Send").clicked()
-            || (field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)));
+        let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
+        let values: Option<Vec<i32>> = input.split_whitespace().map(parse_value).collect();
+        let clicked = ui
+            .add_enabled(values.is_some(), egui::Button::new("Send"))
+            .clicked();
 
-        if send {
-            for value in input.split_whitespace().filter_map(parse_value) {
-                machine.push_input(value);
+        if enter {
+            field.request_focus();
+        }
+
+        // Bad input stays in the field to be fixed instead of being dropped.
+        match values {
+            Some(values) if clicked || enter => {
+                for value in values {
+                    machine.push_input(value);
+                }
+
+                input.clear();
             }
 
-            input.clear();
+            None => {
+                ui.colored_label(ui.visuals().error_fg_color, "numbers only");
+            }
+
+            _ => {}
         }
 
         ui.data_mut(|data| data.insert_temp(id, input));

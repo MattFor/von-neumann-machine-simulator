@@ -7,6 +7,7 @@ pub mod machine_mode;
 use eframe::egui;
 use std::time::Instant;
 
+use crate::debugger::debug::Debug;
 use gui_state::{AppState, UiMode};
 
 const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
@@ -81,7 +82,9 @@ impl eframe::App for VnmApp {
 
         if self.state.mode == UiMode::Machine && self.state.show_console {
             egui::Panel::bottom("console_panel")
-                .exact_size(CONSOLE_PANEL_HEIGHT)
+                .resizable(true)
+                .default_size(CONSOLE_PANEL_HEIGHT)
+                .min_size(CONSOLE_PANEL_HEIGHT)
                 .show(ui, |ui| {
                     crate::gui::console_view::show(ui, &mut self.state.machine);
                 });
@@ -97,14 +100,9 @@ impl eframe::App for VnmApp {
             }
 
             UiMode::Debug => {
-                if let Some(mut debug) = self.state.debug.take() {
-                    debug_mode::show(ui, &mut self.state, &mut debug);
-                    self.state.debug = Some(debug);
-                } else {
-                    let mut debug = crate::debugger::debug::Debug::new();
-                    debug_mode::show(ui, &mut self.state, &mut debug);
-                    self.state.debug = Some(debug);
-                }
+                let mut debug = self.state.debug.take().unwrap_or_else(Debug::new);
+                debug_mode::show(ui, &mut self.state, &mut debug);
+                self.state.debug = Some(debug);
             }
         });
 

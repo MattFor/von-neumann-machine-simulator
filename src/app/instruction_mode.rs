@@ -18,11 +18,13 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         ui.separator();
 
         if ui.button("Add Instruction").clicked() {
-            state
-                .machine
-                .instruction_set
-                .definitions
-                .push(Definition::default());
+            let set = &mut state.machine.instruction_set;
+            let code = (0..=255).find(|code| set.find(*code).is_none());
+
+            set.definitions.push(Definition {
+                code: code.unwrap_or(0),
+                ..Default::default()
+            });
         }
 
         if ui.button("Restore Default").clicked() {

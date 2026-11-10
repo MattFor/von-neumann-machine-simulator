@@ -13,6 +13,12 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.separator();
 
     let mut removed = None;
+    let codes: Vec<i32> = machine
+        .instruction_set
+        .definitions
+        .iter()
+        .map(|definition| definition.code)
+        .collect();
 
     egui::ScrollArea::vertical()
         .id_salt("instruction_set_scroll")
@@ -63,6 +69,19 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
                         if ui.button("Remove").clicked() {
                             removed = Some(index);
                         }
+
+                        // Only the first definition of a code is ever decoded.
+                        let duplicate = codes
+                            .iter()
+                            .filter(|code| **code == definition.code)
+                            .count()
+                            > 1;
+
+                        // Always added: a label that comes and goes shifts widget ids and steals focus.
+                        ui.colored_label(
+                            ui.visuals().warn_fg_color,
+                            if duplicate { "duplicate code" } else { "" },
+                        );
 
                         ui.end_row();
                     }
