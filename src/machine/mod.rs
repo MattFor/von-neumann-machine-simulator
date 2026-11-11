@@ -349,5 +349,30 @@ mod tests {
         assert_eq!(machine.cpu.pc, 12);
     }
 
+    #[test]
+    fn saved_program_carries_its_instruction_set() {
+        let mut machine = machine_with(&[word(1, 10), word(255, 0)]);
+        machine.instruction_set.name = "Custom".to_string();
+        machine.instruction_set.definitions[1].code = 77;
+        machine.breakpoints.insert(1);
+
+        let path = std::env::temp_dir().join("vnm-roundtrip-test.json");
+        Program::from_machine("roundtrip".to_string(), &machine)
+            .save(&path)
+            .unwrap();
+        let program = Program::load(&path).unwrap();
+        std::fs::remove_file(&path).unwrap();
+
+        let mut loaded = Machine::new();
+        loaded.breakpoints.insert(5);
+        program.apply(&mut loaded);
+
+        assert_eq!(program.name, "roundtrip");
+        assert_eq!(loaded.memory.read(0), word(1, 10));
+        assert_eq!(loaded.instruction_set.name, "Custom");
+        assert_eq!(loaded.instruction_set.definitions[1].code, 77);
+        assert!(loaded.breakpoints.is_empty());
+    }
+
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;
 }
