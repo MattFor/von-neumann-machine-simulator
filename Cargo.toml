@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-eframe = "0.36"
+eframe = { version = "0.36", features = ["persistence"] }
 egui = "0.36"
 
 serde = { version = "1", features = ["derive"] }

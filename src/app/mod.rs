@@ -8,23 +8,50 @@ use eframe::egui;
 use std::time::Instant;
 
 use crate::debugger::debug::Debug;
-use gui_state::{AppState, UiMode};
+use gui_state::{AppState, MAX_SPEED, MIN_SPEED, UiMode};
 
 const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
+
+// Remembered between launches: speed, then the memory, registers, CPU and console toggles.
+type Settings = (usize, bool, bool, bool, bool);
 
 pub struct VnmApp {
     pub state: AppState,
 }
 
 impl VnmApp {
-    pub fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        Self {
-            state: AppState::new(),
+    pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
+        let mut state = AppState::new();
+
+        if let Some((speed, memory, registers, cpu, console)) = cc
+            .storage
+            .and_then(|storage| eframe::get_value::<Settings>(storage, eframe::APP_KEY))
+        {
+            state.speed = speed.clamp(MIN_SPEED, MAX_SPEED);
+            state.show_memory = memory;
+            state.show_registers = registers;
+            state.show_cpu = cpu;
+            state.show_console = console;
         }
+
+        Self { state }
     }
 }
 
 impl eframe::App for VnmApp {
+    fn save(&mut self, storage: &mut dyn eframe::Storage) {
+        let state = &self.state;
+        let settings: Settings = (
+            state.speed,
+            state.show_memory,
+            state.show_registers,
+            state.show_cpu,
+            state.show_console,
+        );
+
+        eframe::set_value(storage, eframe::APP_KEY, &settings);
+    }
+
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::Panel::top("top_menu").show(ui, |ui| {
             ui.horizontal(|ui| {
