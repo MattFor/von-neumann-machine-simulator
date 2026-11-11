@@ -16,26 +16,34 @@ cargo test
 ## Use
 
 Click **Example** to load a small countdown program, then **Run** or **Step**.
+The **Guide** tab explains everything in the app, and every button has a tooltip.
 
 | Key      | Action             |
 | -------- | ------------------ |
 | `F5`     | Run / pause        |
 | `F10`    | Step               |
+| `F11`    | Micro step         |
 | `Ctrl+R` | Reset the CPU      |
 | `Ctrl+O` | Open a program     |
 | `Ctrl+S` | Save the program   |
 
 - **Memory**: each cell is a 16-bit word, the high byte is the instruction code and
   the low byte is the operand. Edit a cell through its instruction, its operand or
-  its whole value (`Val`). The highlighted row is the program counter and the view
-  follows it.
+  its whole value (`Val`). The orange row is the program counter and the view
+  follows it, the blue row is the cell the address bus points at.
 - **Breakpoints**: click an address to toggle one. Run stops when the program
   counter reaches it; press Run again to carry on.
 - **Registers**: the ones the last step changed are highlighted.
 - **Console**: `OUT` prints here. When the program stops on `IN`, type one or more
   numbers and press Enter; a running program carries on by itself.
+- **Control unit** (off by default, under Views): shows the micro steps of the
+  current instruction. **Micro Step** does one of them at a time. Every micro step
+  is also a button, so the machine can be driven by hand, and **Record** turns the
+  buttons you press into a new instruction.
 - **Instruction Set**: rename instructions, change their codes or add your own
-  aliases, and save the set as JSON.
+  aliases, and save the set as JSON. An instruction set to `Custom` has its micro
+  steps edited right there. **Johnny** and **Bonsai** load the instruction sets of
+  the [Johnny simulator](https://github.com/Laubersheini/johnny).
 
 Speed, visible panels, theme and window size are remembered between launches.
 
@@ -54,13 +62,17 @@ Speed, visible panels, theme and window size are remembered between launches.
 | 08   | JZ    | `PC = operand` if `ACC == 0`                |
 | 09   | IN    | `ACC = next input value`                    |
 | 0A   | OUT   | Print `ACC`                                 |
-| 0B   | INC   | `mem[operand] += 1`                         |
-| 0C   | DEC   | `mem[operand] -= 1`                         |
-| 0D   | NULL  | `mem[operand] = 0`                          |
-| 0E   | TST   | Skip the next instruction if `mem[operand] == 0` |
+| 0B   | INC   | `mem[operand] += 1`, through `ACC`          |
+| 0C   | DEC   | `mem[operand] -= 1`, through `ACC`          |
+| 0D   | NULL  | `mem[operand] = 0`, `ACC = 0`               |
+| 0E   | TST   | `ACC = mem[operand]`, skip the next instruction if it is 0 |
 | FF   | HALT  | Stop                                        |
 
-The accumulator and the data bus are kept between 0 and 19999.
+The accumulator is kept between 0 and 19999.
+
+Every instruction is a list of micro steps (`ins->ab`, `ram->db`, `db->acc`, ...) that
+runs after the fetch (`pc->ab`, `ram->db`, `db->ins`, `ins->mc`). The Guide tab and the
+Instruction Set tab list them all.
 
 ## Program files
 
