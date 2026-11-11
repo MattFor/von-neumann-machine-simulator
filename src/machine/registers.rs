@@ -2,7 +2,7 @@ const VALUE_MIN: i32 = 0;
 const VALUE_MAX: i32 = 19_999;
 
 const MBR_MIN: i32 = VALUE_MIN;
-const MBR_MAX: i32 = VALUE_MAX;
+const MBR_MAX: i32 = 0xffff; // a whole word, so that instructions fit through the data bus
 
 pub const ACC_MIN: i32 = VALUE_MIN;
 pub const ACC_MAX: i32 = VALUE_MAX;

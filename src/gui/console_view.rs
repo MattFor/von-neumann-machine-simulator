@@ -9,7 +9,11 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {
         ui.heading("Console");
 
-        if ui.button("Clear").clicked() {
+        if ui
+            .button("Clear")
+            .on_hover_text("Clear the console output")
+            .clicked()
+        {
             machine.output.clear();
         }
 
@@ -47,6 +51,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         let values: Option<Vec<i32>> = input.split_whitespace().map(parse_value).collect();
         let clicked = ui
             .add_enabled(values.is_some(), egui::Button::new("Send"))
+            .on_hover_text("Queue these numbers for IN to read")
             .clicked();
 
         if enter {

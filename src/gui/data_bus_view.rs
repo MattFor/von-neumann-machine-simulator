@@ -1,6 +1,6 @@
 use egui::{Align2, Button, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
 
-use crate::machine::Machine;
+use crate::machine::{Machine, MicroOp};
 
 const COLUMN_COUNT: usize = 12;
 const TRANSFER_HEIGHT: f32 = 72.0;
@@ -18,67 +18,49 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
         ui.painter().add(arrow(transfer_cell(transfers, 2), true));
         ui.painter().add(arrow(transfer_cell(transfers, 3), false));
 
-        if transfer_button(
-            ui,
-            transfers,
-            2,
-            "ram->db",
-            "Read the cell at PC onto the data bus",
-        ) {
-            machine.cpu.mar = machine.cpu.pc;
-            machine
-                .cpu
-                .set_mbr(machine.memory.read(machine.cpu.mar as usize));
-        }
-
-        if transfer_button(
-            ui,
-            transfers,
-            3,
-            "db->ram",
-            "Write the data bus into the cell at PC",
-        ) {
-            machine.cpu.mar = machine.cpu.pc;
-            machine
-                .memory
-                .write(machine.cpu.mar as usize, machine.cpu.mbr);
-        }
+        transfer_button(ui, machine, transfers, 2, MicroOp::RamToDb);
+        transfer_button(ui, machine, transfers, 3, MicroOp::DbToRam);
     }
 
     if show_cpu {
-        if transfer_button(
-            ui,
-            transfers,
-            10,
-            "acc->db",
-            "Copy the accumulator onto the data bus",
-        ) {
-            machine.cpu.set_mbr(machine.cpu.acc);
-        }
-
-        if transfer_button(
-            ui,
-            transfers,
-            11,
-            "db->acc",
-            "Copy the data bus into the accumulator",
-        ) {
-            machine.cpu.set_acc(machine.cpu.mbr);
-        }
+        transfer_button(ui, machine, transfers, 10, MicroOp::AccToDb);
+        transfer_button(ui, machine, transfers, 11, MicroOp::DbToAcc);
     }
 
     let bus = Rect::from_min_max(pos2(rect.left(), transfers.bottom()), rect.max);
+    let field = Rect::from_center_size(bus.center(), vec2(70.0, 22.0));
     ui.painter().rect_filled(bus, 0.0, BUS_COLOR);
-    ui.painter().text(
-        bus.center(),
-        Align2::CENTER_CENTER,
-        format!(
-            "Data Bus    {}    0x{:04X}",
-            machine.cpu.mbr, machine.cpu.mbr
+
+    for (anchor, align, text) in [
+        (
+            field.left_center() - vec2(12.0, 0.0),
+            Align2::RIGHT_CENTER,
+            "Data Bus".to_string(),
         ),
-        FontId::monospace(14.0),
-        Color32::from_gray(32),
-    );
+        (
+            field.right_center() + vec2(12.0, 0.0),
+            Align2::LEFT_CENTER,
+            format!("0x{:04X}", machine.cpu.mbr),
+        ),
+    ] {
+        ui.painter().text(
+            anchor,
+            align,
+            text,
+            FontId::monospace(14.0),
+            Color32::from_gray(32),
+        );
+    }
+
+    let mut value = machine.cpu.mbr;
+
+    if ui
+        .put(field, egui::DragValue::new(&mut value).range(0..=0xffff))
+        .on_hover_text("The value on the data bus; drag or double-click to set it by hand")
+        .changed()
+    {
+        machine.cpu.set_mbr(value);
+    }
 
     transfers
 }
@@ -183,13 +165,18 @@ fn arrow_head(tip: Pos2, half_width: f32, down: bool) -> Shape {
     )
 }
 
-fn transfer_button(ui: &mut Ui, grid: Rect, column: usize, label: &str, hint: &str) -> bool {
+fn transfer_button(ui: &mut Ui, machine: &mut Machine, grid: Rect, column: usize, op: MicroOp) {
     let cell = transfer_cell(grid, column);
+    let (label, hint) = op.info();
 
-    ui.put(
-        Rect::from_center_size(cell.center(), vec2((cell.width() - 4.0).min(80.0), 24.0)),
-        Button::new(label),
-    )
-    .on_hover_text(hint)
-    .clicked()
+    if ui
+        .put(
+            Rect::from_center_size(cell.center(), vec2((cell.width() - 4.0).min(80.0), 24.0)),
+            Button::new(label),
+        )
+        .on_hover_text(hint)
+        .clicked()
+    {
+        machine.manual(op);
+    }
 }

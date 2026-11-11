@@ -1,12 +1,14 @@
 use egui::Ui;
 
-use crate::machine::Machine;
-use crate::machine::{Instruction, MEMORY_SIZE, Opcode, encode, execute};
+use crate::machine::{MEMORY_SIZE, Machine, encode};
 use crate::utilities::parse_value;
 
 const VISIBLE_CELLS: usize = 256;
 const HIGHLIGHT_DARK: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const HIGHLIGHT_LIGHT: egui::Color32 = egui::Color32::from_rgb(255, 225, 170);
+const ADDRESS_BUS_DARK: egui::Color32 = egui::Color32::from_rgb(0, 40, 65);
+const ADDRESS_BUS_LIGHT: egui::Color32 = egui::Color32::from_rgb(190, 225, 255);
+const SCROLL_TO: &str = "memory_scroll_to";
 const DEFAULT_ADDRESS: &str = "0";
 
 pub struct Header {
@@ -21,11 +23,11 @@ const COLUMN_HEADERS: [Header; 4] = [
     },
     Header {
         label: "Asm",
-        description: "Opcode",
+        description: "Instruction: the high byte of the word",
     },
     Header {
         label: "Opnd",
-        description: "Operand (value)",
+        description: "Operand: the low byte, usually the address the instruction works on",
     },
     Header {
         label: "Val",
@@ -44,14 +46,13 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
     memory_grid_panel(ui, machine, footer_height);
 
-    let pc = machine.cpu.pc;
-    let raw = machine.memory.read(pc as usize);
+    let raw = machine.memory.read(machine.cpu.mar as usize);
 
     ui.add_sized(
         [ui.available_width(), ui.spacing().interact_size.y],
         egui::Label::new(egui::RichText::new(format!("{raw}")).monospace()),
     )
-    .on_hover_text("Value of the cell the address bus (PC) points at");
+    .on_hover_text("Value of the cell the address bus points at");
 
     ui.separator();
 }
@@ -69,19 +70,16 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
         let button = ui
             .button("Set address bus")
-            .on_hover_text("Point the program counter at this address (decimal or 0x hex)");
+            .on_hover_text(
+                "Put this address (decimal or 0x hex) on the address bus; ram->db and db->ram work on that cell",
+            );
 
         if (button.clicked() || enter)
             && let Some(parsed_address) = parse_value(&address_bus)
                 .filter(|address| (0..MEMORY_SIZE as i32).contains(address))
         {
-            execute(
-                machine,
-                Instruction {
-                    opcode: Opcode::Jump,
-                    operand: parsed_address,
-                },
-            );
+            machine.cpu.mar = parsed_address as u16;
+            ui.data_mut(|data| data.insert_temp(egui::Id::new(SCROLL_TO), parsed_address as usize));
         }
     });
 }
@@ -104,10 +102,16 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let pc_id = egui::Id::new("memory_last_pc");
     let pc_moved = ui.data_mut(|data| std::mem::replace(data.get_temp_mut_or(pc_id, pc), pc)) != pc;
 
-    let highlight = if ui.visuals().dark_mode {
-        HIGHLIGHT_DARK
+    // An address bus set by hand is shown once too.
+    let target = ui
+        .data_mut(|data| data.remove_temp::<usize>(egui::Id::new(SCROLL_TO)))
+        .or(pc_moved.then_some(pc));
+
+    let address_bus = machine.cpu.mar as usize;
+    let (highlight, address_bus_highlight) = if ui.visuals().dark_mode {
+        (HIGHLIGHT_DARK, ADDRESS_BUS_DARK)
     } else {
-        HIGHLIGHT_LIGHT
+        (HIGHLIGHT_LIGHT, ADDRESS_BUS_LIGHT)
     };
 
     egui::ScrollArea::vertical()
@@ -120,9 +124,9 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
             // relative to `first_address`.
             let first_address = rows.start;
 
-            if pc_moved {
+            if let Some(target) = target {
                 let pitch = row_height + ui.spacing().item_spacing.y;
-                let top = ui.max_rect().top() + (pc as f32 - first_address as f32) * pitch;
+                let top = ui.max_rect().top() + (target as f32 - first_address as f32) * pitch;
 
                 ui.scroll_to_rect(
                     egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), top..=top + pitch),
@@ -133,8 +137,10 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
             egui::Grid::new("memory_grid")
                 .striped(true)
                 .with_row_color(move |row, _style| {
-                    if pc >= first_address && row == (pc - first_address) {
+                    if row + first_address == pc {
                         Some(highlight)
+                    } else if row + first_address == address_bus {
+                        Some(address_bus_highlight)
                     } else {
                         None
                     }

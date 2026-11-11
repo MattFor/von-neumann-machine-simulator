@@ -25,10 +25,36 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
     ui.horizontal(|ui| {
         ui.label("Views:");
-        ui.checkbox(&mut state.show_memory, "Memory");
-        ui.checkbox(&mut state.show_registers, "Registers");
-        ui.checkbox(&mut state.show_cpu, "CPU");
-        ui.checkbox(&mut state.show_console, "Console");
+
+        for (shown, label, hint) in [
+            (
+                &mut state.show_memory,
+                "Memory",
+                "The memory cells: the program and its data",
+            ),
+            (
+                &mut state.show_registers,
+                "Registers",
+                "The registers and the instruction that comes next",
+            ),
+            (
+                &mut state.show_control_unit,
+                "Control unit",
+                "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
+            ),
+            (
+                &mut state.show_cpu,
+                "CPU",
+                "Program counter, accumulator and the arithmetic buttons",
+            ),
+            (
+                &mut state.show_console,
+                "Console",
+                "What the program prints, and the numbers it reads",
+            ),
+        ] {
+            ui.checkbox(shown, label).on_hover_text(hint);
+        }
     });
 
     ui.separator();
@@ -44,10 +70,15 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         .inner;
     let mut accumulator = None;
 
-    let panels = [state.show_memory, state.show_registers, state.show_cpu]
-        .iter()
-        .filter(|shown| **shown)
-        .count();
+    let panels = [
+        state.show_memory,
+        state.show_registers,
+        state.show_control_unit,
+        state.show_cpu,
+    ]
+    .iter()
+    .filter(|shown| **shown)
+    .count();
 
     let width = ui.available_width();
     let panels_height = ui.available_height();
@@ -73,6 +104,21 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
                                 .id_salt("registers_scroll")
                                 .show(ui, |ui| {
                                     crate::gui::register_view::show(ui, &state.machine);
+                                });
+                        });
+                        column += 1;
+                    }
+
+                    if state.show_control_unit {
+                        debug_view(&mut columns[column], Color32::RED, |ui| {
+                            egui::ScrollArea::vertical()
+                                .id_salt("control_unit_scroll")
+                                .show(ui, |ui| {
+                                    if let Some(message) =
+                                        crate::gui::control_unit_view::show(ui, &mut state.machine)
+                                    {
+                                        state.status_message = message;
+                                    }
                                 });
                         });
                         column += 1;

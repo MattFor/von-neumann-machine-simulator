@@ -6,18 +6,20 @@ mod registers;
 
 use std::collections::{HashSet, VecDeque};
 
-pub use executor::execute;
 pub use instruction_decoder::encode;
-pub use instructions::{Definition, Instruction, InstructionSet, Opcode};
+pub use instructions::{Definition, FETCH, InstructionSet, MicroOp, Opcode};
 pub use memory::MEMORY_SIZE;
 pub use registers::{ACC_MAX, ACC_MIN};
 
-use instruction_decoder::decode;
+use executor::execute;
 use memory::Memory;
 use registers::Registers;
 
 // Output is ASCII only, so cutting at a byte offset is safe.
 const OUTPUT_LIMIT: usize = 16 * 1024;
+
+// More micro steps than this in one instruction means its micro program loops.
+const MICRO_LIMIT: usize = 1000;
 
 pub struct Machine {
     pub cpu: Registers,
@@ -30,6 +32,13 @@ pub struct Machine {
 
     pub halted: bool,
     pub waiting: bool,
+
+    // Control unit: fetching or executing, and the index of the next micro step.
+    pub executing: bool,
+    pub mc: usize,
+
+    // Micro steps fired by hand since recording was switched on.
+    pub recording: Option<Vec<MicroOp>>,
 
     pub breakpoints: HashSet<u16>,
 
@@ -51,6 +60,11 @@ impl Machine {
             halted: false,
             waiting: false,
 
+            executing: false,
+            mc: 0,
+
+            recording: None,
+
             breakpoints: HashSet::new(),
 
             input: VecDeque::new(),
@@ -65,6 +79,9 @@ impl Machine {
 
         self.halted = false;
         self.waiting = false;
+
+        self.executing = false;
+        self.mc = 0;
 
         self.input.clear();
         self.output.clear();
@@ -91,6 +108,53 @@ impl Machine {
         }
     }
 
+    // The micro steps the control unit is working through.
+    pub fn steps(&self) -> &[MicroOp] {
+        if self.executing {
+            self.instruction_set.steps((self.cpu.ir >> 8) as i32)
+        } else {
+            &FETCH
+        }
+    }
+
+    // Running off the end of a micro program ends the instruction.
+    fn micro(&mut self) {
+        let op = self
+            .steps()
+            .get(self.mc)
+            .copied()
+            .unwrap_or(MicroOp::McZero);
+
+        self.waiting = false;
+
+        execute(self, op);
+
+        if !self.waiting && !matches!(op, MicroOp::InsToMc | MicroOp::McZero) {
+            self.mc += 1;
+        }
+    }
+
+    pub fn micro_step(&mut self) {
+        if self.halted {
+            return;
+        }
+
+        self.previous = self.cpu;
+        self.micro();
+    }
+
+    // A micro step fired by hand; it does not move the control unit on.
+    pub fn manual(&mut self, op: MicroOp) {
+        self.previous = self.cpu;
+
+        execute(self, op);
+
+        if let Some(steps) = &mut self.recording {
+            steps.push(op);
+        }
+    }
+
+    // Finishes the current instruction, from wherever the micro steps are.
     pub fn step(&mut self) {
         if self.halted {
             return;
@@ -98,17 +162,16 @@ impl Machine {
 
         self.previous = self.cpu;
 
-        self.cpu.mar = self.cpu.pc;
+        for _ in 0..MICRO_LIMIT {
+            self.micro();
 
-        let raw = self.memory.read(self.cpu.mar as usize);
+            if self.halted || self.waiting || (!self.executing && self.mc == 0) {
+                return;
+            }
+        }
 
-        self.cpu.ir = raw as u16;
-
-        self.cpu.pc = self.cpu.pc.wrapping_add(1);
-
-        let instruction = decode(&self.instruction_set, raw);
-
-        execute(self, instruction);
+        self.print("error: the instruction never ends\n");
+        self.halted = true;
     }
 
     // Returns true when it stopped on a breakpoint.
@@ -130,8 +193,10 @@ impl Machine {
     }
 
     pub fn current_instruction(&self) -> String {
-        let raw = self.memory.read(self.cpu.pc as usize);
+        self.describe(self.memory.read(self.cpu.pc as usize))
+    }
 
+    pub fn describe(&self, raw: i32) -> String {
         format!(
             "{:04X}  {} {:02X}",
             raw as u16,
@@ -226,7 +291,7 @@ mod tests {
 
         assert!(machine.halted);
         assert_eq!(machine.cpu.acc, 1);
-        assert_eq!(machine.cpu.pc, 2);
+        assert_eq!(machine.cpu.pc, 1);
     }
 
     #[test]
@@ -309,7 +374,8 @@ mod tests {
         machine.run_steps(2);
 
         assert_eq!(machine.cpu.acc, 0);
-        assert_eq!(machine.cpu.pc, 3);
+        assert!(machine.halted);
+        assert_eq!(machine.cpu.pc, 2);
     }
 
     #[test]
@@ -372,6 +438,80 @@ mod tests {
         assert_eq!(loaded.instruction_set.name, "Custom");
         assert_eq!(loaded.instruction_set.definitions[1].code, 77);
         assert!(loaded.breakpoints.is_empty());
+    }
+
+    #[test]
+    fn micro_steps_walk_through_fetch_and_execute() {
+        let mut machine = machine_with(&[word(1, 10)]);
+        machine.memory.write(10, 42);
+
+        for _ in 0..FETCH.len() {
+            machine.micro_step();
+        }
+
+        assert!(machine.executing);
+        assert_eq!(machine.cpu.ir as i32, word(1, 10));
+        assert_eq!(machine.cpu.acc, 0);
+
+        machine.step();
+
+        assert!(!machine.executing);
+        assert_eq!(machine.cpu.acc, 42);
+        assert_eq!(machine.cpu.pc, 1);
+    }
+
+    #[test]
+    fn recorded_micro_steps_run_as_an_instruction() {
+        let mut machine = machine_with(&[word(77, 10)]);
+        machine.memory.write(10, 5);
+        machine.recording = Some(Vec::new());
+
+        for op in [
+            MicroOp::InsToAb,
+            MicroOp::RamToDb,
+            MicroOp::DbToAcc,
+            MicroOp::Plus,
+            MicroOp::PcInc,
+        ] {
+            machine.manual(op);
+        }
+
+        let micro = machine.recording.take().unwrap();
+        machine.instruction_set.definitions.push(Definition {
+            code: 77,
+            mnemonic: "DBL".to_string(),
+            opcode: Opcode::Custom,
+            micro,
+        });
+
+        machine.reset();
+        machine.step();
+
+        assert_eq!(machine.cpu.acc, 10);
+        assert_eq!(machine.cpu.pc, 1);
+    }
+
+    #[test]
+    fn micro_program_that_never_ends_halts() {
+        let mut machine = machine_with(&[word(77, 0)]);
+        machine.instruction_set.definitions.push(Definition {
+            code: 77,
+            opcode: Opcode::Custom,
+            micro: vec![MicroOp::InsToMc],
+            ..Default::default()
+        });
+
+        machine.step();
+
+        assert!(machine.halted);
+    }
+
+    #[test]
+    fn instruction_sets_saved_before_micro_steps_still_load() {
+        let old = r#"{"name":"Old","definitions":[{"code":1,"mnemonic":"LOAD","opcode":"Load"}]}"#;
+        let set: InstructionSet = serde_json::from_str(old).unwrap();
+
+        assert_eq!(set.steps(1), Opcode::Load.micro());
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

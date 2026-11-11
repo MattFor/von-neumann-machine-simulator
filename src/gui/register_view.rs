@@ -16,16 +16,36 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             let (cpu, old) = (&machine.cpu, &machine.previous);
 
             for (name, description, value, previous) in [
-                ("ACC", "Accumulator", cpu.acc, old.acc),
-                ("PC", "Program counter", cpu.pc as i32, old.pc as i32),
-                ("IR", "Instruction register", cpu.ir as i32, old.ir as i32),
+                (
+                    "ACC",
+                    "Accumulator: where all arithmetic happens",
+                    cpu.acc,
+                    old.acc,
+                ),
+                (
+                    "PC",
+                    "Program counter: address of the next instruction",
+                    cpu.pc as i32,
+                    old.pc as i32,
+                ),
+                (
+                    "IR",
+                    "Instruction register: the instruction being carried out",
+                    cpu.ir as i32,
+                    old.ir as i32,
+                ),
                 (
                     "MAR",
-                    "Memory address register",
+                    "Memory address register: the address bus, it picks a memory cell",
                     cpu.mar as i32,
                     old.mar as i32,
                 ),
-                ("MBR", "Memory buffer register", cpu.mbr, old.mbr),
+                (
+                    "MBR",
+                    "Memory buffer register: the data bus, it carries a value to or from memory",
+                    cpu.mbr,
+                    old.mbr,
+                ),
             ] {
                 // Registers the last step changed stand out.
                 let color = if value != previous {
@@ -55,5 +75,6 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
         }
     ));
 
-    ui.label(format!("Next: {}", machine.current_instruction()));
+    ui.label(format!("Next: {}", machine.current_instruction()))
+        .on_hover_text("The instruction the program counter points at");
 }

@@ -28,6 +28,7 @@ pub struct AppState {
 
     pub show_memory: bool,
     pub show_registers: bool,
+    pub show_control_unit: bool,
     pub show_cpu: bool,
     pub show_console: bool,
 
@@ -53,6 +54,7 @@ impl AppState {
 
             show_memory: true,
             show_registers: true,
+            show_control_unit: false,
             show_cpu: true,
             show_console: true,
 
