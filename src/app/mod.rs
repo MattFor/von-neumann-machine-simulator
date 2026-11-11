@@ -62,6 +62,7 @@ impl eframe::App for VnmApp {
                 for (mode, label) in [
                     (UiMode::Machine, "Machine"),
                     (UiMode::Instructions, "Instruction Set"),
+                    (UiMode::Guide, "Guide"),
                 ] {
                     if ui
                         .selectable_label(self.state.mode == mode, label)
@@ -126,6 +127,10 @@ impl eframe::App for VnmApp {
 
             UiMode::Instructions => {
                 instruction_mode::show(ui, &mut self.state);
+            }
+
+            UiMode::Guide => {
+                crate::gui::guide_view::show(ui, &self.state.machine);
             }
 
             UiMode::Debug => {

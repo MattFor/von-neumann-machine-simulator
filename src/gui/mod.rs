@@ -2,6 +2,7 @@ pub mod console_view;
 pub mod control_unit_view;
 pub mod cpu_view;
 pub mod data_bus_view;
+pub mod guide_view;
 pub mod instruction_set_view;
 pub mod memory_view;
 pub mod register_view;

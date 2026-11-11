@@ -11,6 +11,7 @@ pub const MAX_SPEED: usize = 10_000;
 pub enum UiMode {
     Machine,
     Instructions,
+    Guide,
 
     #[cfg_attr(not(feature = "debug-mode"), allow(dead_code))]
     Debug,
