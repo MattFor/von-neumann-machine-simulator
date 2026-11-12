@@ -11,6 +11,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState, debug: &mut DebugState) {
         if raw.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
             debug.send(state, debug.command_input.clone());
             debug.command_input.clear();
+            raw.request_focus();
         }
     });
 

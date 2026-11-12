@@ -1,7 +1,7 @@
 use crate::debugger::debug::Debug as DebugState;
 use crate::machine::InstructionSet;
-use crate::machine::machine::Machine;
-use crate::program::program::Program;
+use crate::machine::Machine;
+use crate::program::Program;
 use std::time::Instant;
 
 pub const MIN_SPEED: usize = 1;
@@ -11,6 +11,7 @@ pub const MAX_SPEED: usize = 10_000;
 pub enum UiMode {
     Machine,
     Instructions,
+    Guide,
 
     #[cfg_attr(not(feature = "debug-mode"), allow(dead_code))]
     Debug,
@@ -28,6 +29,7 @@ pub struct AppState {
 
     pub show_memory: bool,
     pub show_registers: bool,
+    pub show_control_unit: bool,
     pub show_cpu: bool,
     pub show_console: bool,
 
@@ -53,10 +55,11 @@ impl AppState {
 
             show_memory: true,
             show_registers: true,
+            show_control_unit: false,
             show_cpu: true,
             show_console: true,
 
-            status_message: "Ready".to_string(),
+            status_message: String::new(),
 
             debug: None,
 
@@ -77,11 +80,33 @@ impl AppState {
     pub fn sync_running(&mut self) {
         if self.machine.halted {
             self.running = false;
-            self.status_message = "Halted".to_string();
-        } else if self.machine.waiting {
-            self.running = false;
-            self.status_message = "Waiting for input".to_string();
         }
+    }
+
+    pub fn status(&self) -> &'static str {
+        if self.machine.halted {
+            "Halted"
+        } else if self.machine.waiting {
+            "Waiting for input"
+        } else if self.running {
+            "Running"
+        } else {
+            "Ready"
+        }
+    }
+
+    fn load(&mut self, program: Program) {
+        program.apply(&mut self.machine);
+
+        self.running = false;
+        self.status_message = format!("Loaded {}", program.name);
+        self.program_name = Some(program.name);
+    }
+
+    pub fn load_example(&mut self) {
+        let example = include_str!("../../assets/countdown.json");
+
+        self.load(serde_json::from_str(example).expect("bundled example is valid"));
     }
 
     pub fn reset(&mut self) {
@@ -106,13 +131,7 @@ impl AppState {
         };
 
         match Program::load(&path) {
-            Ok(program) => {
-                program.apply(&mut self.machine);
-
-                self.running = false;
-                self.status_message = format!("Loaded {}", program.name);
-                self.program_name = Some(program.name);
-            }
+            Ok(program) => self.load(program),
 
             Err(error) => {
                 self.status_message = format!("Could not load program: {error}");
@@ -133,6 +152,10 @@ impl AppState {
         else {
             return;
         };
+
+        let name = path
+            .file_stem()
+            .map_or(name, |stem| stem.to_string_lossy().into_owned());
 
         let program = Program::from_machine(name.clone(), &self.machine);
 

@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::machine::machine::Machine;
+use crate::machine::{InstructionSet, Machine};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Program {
@@ -12,6 +12,10 @@ pub struct Program {
     pub entry_point: u16,
 
     pub memory: Vec<i32>,
+
+    // Absent in older files; those keep whatever set is loaded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub instruction_set: Option<InstructionSet>,
 }
 
 impl Program {
@@ -27,6 +31,7 @@ impl Program {
             name,
             entry_point: machine.entry_point,
             memory: data[..length].to_vec(),
+            instruction_set: Some(machine.instruction_set.clone()),
         }
     }
 
@@ -43,6 +48,12 @@ impl Program {
     pub fn apply(&self, machine: &mut Machine) {
         machine.memory.load(&self.memory);
         machine.entry_point = self.entry_point;
+        machine.breakpoints.clear();
+
+        if let Some(set) = &self.instruction_set {
+            machine.instruction_set = set.clone();
+        }
+
         machine.reset();
     }
 }

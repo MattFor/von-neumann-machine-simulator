@@ -1,11 +1,9 @@
 use super::{controls, gui_state::AppState};
+use crate::gui::data_bus_view;
 use egui::{Color32, Ui};
 
 #[cfg(feature = "debug-mode")]
 use egui::{Frame, Stroke};
-
-const CONSOLE_HEIGHT: f32 = 100.0;
-const FORCE_HIDE_CONSOLE_AT: f32 = 300.0; // Force hide console when height is lower than this value. Prevents visual bug.
 
 #[cfg(feature = "debug-mode")]
 fn debug_view(ui: &mut Ui, color: Color32, add: impl FnOnce(&mut Ui)) {
@@ -27,26 +25,63 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
     ui.horizontal(|ui| {
         ui.label("Views:");
-        ui.checkbox(&mut state.show_memory, "Memory");
-        ui.checkbox(&mut state.show_registers, "Registers");
-        ui.checkbox(&mut state.show_cpu, "CPU");
-        ui.checkbox(&mut state.show_console, "Console");
+
+        for (shown, label, hint) in [
+            (
+                &mut state.show_memory,
+                "Memory",
+                "The memory cells: the program and its data",
+            ),
+            (
+                &mut state.show_registers,
+                "Registers",
+                "The registers and the instruction that comes next",
+            ),
+            (
+                &mut state.show_control_unit,
+                "Control unit",
+                "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
+            ),
+            (
+                &mut state.show_cpu,
+                "CPU",
+                "Program counter, accumulator and the arithmetic buttons",
+            ),
+            (
+                &mut state.show_console,
+                "Console",
+                "What the program prints, and the numbers it reads",
+            ),
+        ] {
+            ui.checkbox(shown, label).on_hover_text(hint);
+        }
     });
 
     ui.separator();
 
-    let panels = [state.show_memory, state.show_registers, state.show_cpu]
-        .iter()
-        .filter(|shown| **shown)
-        .count();
+    let cpu_connections = ui.painter().add(egui::Shape::Noop);
+    let transfers = egui::Panel::bottom("data_bus_panel")
+        .exact_size(data_bus_view::HEIGHT)
+        .frame(egui::Frame::NONE)
+        .show_separator_line(false)
+        .show(ui, |ui| {
+            data_bus_view::show(ui, &mut state.machine, state.show_memory, state.show_cpu)
+        })
+        .inner;
+    let mut accumulator = None;
+
+    let panels = [
+        state.show_memory,
+        state.show_registers,
+        state.show_control_unit,
+        state.show_cpu,
+    ]
+    .iter()
+    .filter(|shown| **shown)
+    .count();
 
     let width = ui.available_width();
-    // NOTE: change the check in future when blessed with greater idea
-    let panels_height = if state.show_console && ui.available_height() > FORCE_HIDE_CONSOLE_AT {
-        (ui.available_height() - CONSOLE_HEIGHT).max(0.0)
-    } else {
-        ui.available_height()
-    };
+    let panels_height = ui.available_height();
 
     if panels > 0 {
         ui.allocate_ui_with_layout(
@@ -65,14 +100,38 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
                     if state.show_registers {
                         debug_view(&mut columns[column], Color32::RED, |ui| {
-                            crate::gui::register_view::show(ui, &state.machine);
+                            egui::ScrollArea::vertical()
+                                .id_salt("registers_scroll")
+                                .show(ui, |ui| {
+                                    crate::gui::register_view::show(ui, &state.machine);
+                                });
+                        });
+                        column += 1;
+                    }
+
+                    if state.show_control_unit {
+                        debug_view(&mut columns[column], Color32::RED, |ui| {
+                            egui::ScrollArea::vertical()
+                                .id_salt("control_unit_scroll")
+                                .show(ui, |ui| {
+                                    if let Some(message) =
+                                        crate::gui::control_unit_view::show(ui, &mut state.machine)
+                                    {
+                                        state.status_message = message;
+                                    }
+                                });
                         });
                         column += 1;
                     }
 
                     if state.show_cpu {
                         debug_view(&mut columns[column], Color32::RED, |ui| {
-                            crate::gui::cpu_view::show(ui, &mut state.machine);
+                            egui::ScrollArea::vertical()
+                                .id_salt("cpu_scroll")
+                                .show(ui, |ui| {
+                                    accumulator =
+                                        crate::gui::cpu_view::show(ui, &mut state.machine);
+                                });
                         });
                     }
                 });
@@ -80,11 +139,10 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         );
     }
 
-    if state.show_console {
-        ui.separator();
-
-        debug_view(ui, Color32::RED, |ui| {
-            crate::gui::console_view::show(ui, &mut state.machine); // NOTE: change it to resizable bottom panel if possible
-        });
+    if state.show_cpu {
+        ui.painter().set(
+            cpu_connections,
+            data_bus_view::cpu_connections(transfers, accumulator),
+        );
     }
 }
