@@ -1,9 +1,8 @@
 use egui::Ui;
 
-use crate::machine::{MEMORY_SIZE, Machine, encode};
+use crate::machine::{MEMORY_SIZE, Machine};
 use crate::utilities::parse_value;
 
-const VISIBLE_CELLS: usize = 256;
 const HIGHLIGHT_DARK: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const HIGHLIGHT_LIGHT: egui::Color32 = egui::Color32::from_rgb(255, 225, 170);
 const ADDRESS_BUS_DARK: egui::Color32 = egui::Color32::from_rgb(0, 40, 65);
@@ -23,20 +22,26 @@ const COLUMN_HEADERS: [Header; 4] = [
     },
     Header {
         label: "Asm",
-        description: "Instruction: the high byte of the word",
+        description: "The instruction in this cell",
     },
     Header {
         label: "Opnd",
-        description: "Operand: the low byte, usually the address the instruction works on",
+        description: "Operand: usually the address the instruction works on",
     },
     Header {
         label: "Val",
-        description: "Whole word, decimal (hover a cell for hex)",
+        description: "The whole word as one number (hover a cell to read it as an instruction)",
     },
 ];
 
-pub fn show(ui: &mut Ui, machine: &mut Machine) {
+// With `by_hand` the address bus can be set and the cell it points at is shown.
+pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
     ui.heading("Memory");
+
+    if !by_hand {
+        memory_grid_panel(ui, machine, 0.0);
+        return;
+    }
 
     address_bus_panel(ui, machine);
 
@@ -87,7 +92,10 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
 fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
-    let definitions = machine.instruction_set.definitions.clone();
+    let set = machine.instruction_set.clone();
+    let (_, max_operand, max_word) = set.limits();
+    // As far as an operand can reach.
+    let cells = max_operand as usize + 1;
     let column_width = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0; // 4 columns, 3 gaps
 
     egui::Grid::new("memory_header")
@@ -119,7 +127,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
         .max_height(scroll_height)
         .min_scrolled_height(0.0)
         .auto_shrink([false, false])
-        .show_rows(ui, row_height, VISIBLE_CELLS, |ui, rows| {
+        .show_rows(ui, row_height, cells, |ui, rows| {
             // NOTE: only the visible slice is rendered, so grid row indices are
             // relative to `first_address`.
             let first_address = rows.start;
@@ -149,16 +157,17 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                     for address in rows {
                         let raw = machine.memory.read(address);
 
-                        let mut code = (raw >> 8) & 0xff;
-                        let mut operand = raw & 0xff;
+                        let (mut code, mut operand) = set.split(raw);
+                        let unchanged = set.join(code, operand);
                         let mut value = raw;
+                        let shown_address = set.digits(address as i32, 4, 3);
 
                         let breakpoint = machine.breakpoints.contains(&(address as u16));
                         let label = if breakpoint {
-                            egui::RichText::new(format!("● {address:04X}"))
+                            egui::RichText::new(format!("● {shown_address}"))
                                 .color(ui.visuals().error_fg_color)
                         } else {
-                            egui::RichText::new(format!("{address:04X}"))
+                            egui::RichText::new(shown_address)
                         };
 
                         let address_cell = ui
@@ -178,28 +187,25 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
 
                         let combo_response = egui::ComboBox::from_id_salt(("opcode", address))
                             .width(column_width)
-                            .selected_text(machine.instruction_set.mnemonic(code))
+                            .selected_text(set.mnemonic(code))
                             .show_ui(ui, |ui| {
-                                for definition in &definitions {
+                                for definition in &set.definitions {
+                                    let shown_code = set.digits(definition.code, 2, 2);
                                     let response = ui.selectable_value(
                                         &mut code,
                                         definition.code,
-                                        format!(
-                                            "{:02X} - {}",
-                                            definition.code, definition.mnemonic
-                                        ),
+                                        format!("{shown_code} - {}", definition.mnemonic),
                                     );
 
                                     response.on_hover_text(format!(
-                                        "{} (code {:02X})\n{}",
+                                        "{} (code {shown_code})\n{}",
                                         definition.mnemonic,
-                                        definition.code,
                                         definition.opcode.description(),
                                     ));
                                 }
                             });
 
-                        if let Some(definition) = definitions.iter().find(|d| d.code == code) {
+                        if let Some(definition) = set.find(code) {
                             combo_response
                                 .response
                                 .on_hover_text(definition.opcode.description());
@@ -207,23 +213,27 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
 
                         ui.add_sized(
                             [column_width, row_height],
-                            egui::DragValue::new(&mut operand)
-                                .range(0..=255)
-                                .hexadecimal(2, false, true),
+                            if set.johnny {
+                                egui::DragValue::new(&mut operand).range(0..=max_operand)
+                            } else {
+                                egui::DragValue::new(&mut operand)
+                                    .range(0..=max_operand)
+                                    .hexadecimal(2, false, true)
+                            },
                         );
 
                         ui.add_sized(
                             [column_width, row_height],
                             egui::DragValue::new(&mut value)
-                                .range(0..=0xffff)
+                                .range(0..=max_word)
                                 .clamp_existing_to_range(false),
                         )
-                        .on_hover_text(format!("0x{:04X}", raw as u16));
+                        .on_hover_text(machine.describe(raw));
 
-                        let updated = encode(code, operand);
+                        let updated = set.join(code, operand);
 
                         // Compared field by field so that just showing a cell never rewrites it.
-                        if updated != encode(raw >> 8, raw) {
+                        if updated != unchanged {
                             machine.memory.write(address, updated);
                         } else if value != raw {
                             machine.memory.write(address, value);

@@ -3,29 +3,34 @@ use egui::Ui;
 use super::listing;
 use crate::machine::{FETCH, Machine, MicroOp};
 
-const SECTIONS: [(&str, &str); 8] = [
+const SECTIONS: [(&str, &str); 9] = [
     (
         "Quick start",
-        "On the Machine tab click Example to load a small countdown program, then Run (F5) to \
-         watch it or Step (F10) to go one instruction at a time. What it prints shows up in the \
+        "On the Machine tab click Example to load a small program, then Run (F5) to watch it \
+         or Step (F10) to go one instruction at a time. What it prints shows up in the \
          Console.\n\n\
+         The app starts in a simple view: the memory, the registers and the bus between them. \
+         Advanced, top right, adds the control unit, the buttons to drive the machine by hand \
+         and the view switches.\n\n\
          Hover over any button, column or register to see what it does.",
     ),
     (
         "The machine",
-        "Memory holds the program and its data. Every cell is one 16-bit word: the high byte is \
-         the instruction code, the low byte is the operand, usually the address the instruction \
-         works on.\n\n\
+        "Memory holds the program and its data. Every cell is one word: an instruction code \
+         and an operand, usually the address the instruction works on. A word is 16 bits, \
+         shown in hex: the high byte is the code, the low byte the operand. In Johnny mode it \
+         is a decimal number instead: two digits of code, then three of operand.\n\n\
          ACC is the accumulator, where all arithmetic happens. It stays between 0 and 19999.\n\
          PC is the program counter, the address of the next instruction.\n\
          IR is the instruction register, the instruction being carried out.\n\
          MAR is the address bus, it picks a memory cell.\n\
-         MBR is the data bus, it carries a value between the memory and the CPU. It is the grey \
-         bar at the bottom.",
+         MBR is the data bus, it carries a value between the memory and the CPU. It is the \
+         blue bar under the cards.",
     ),
     (
         "Running a program",
-        "Run (F5) carries out instructions at the chosen speed, Pause (F5) stops it.\n\
+        "Run (F5) carries out instructions at the chosen speed and becomes Pause while it \
+         does.\n\
          Step (F10) carries out one instruction.\n\
          Reset (Ctrl+R) puts the registers and the console back to the start. Memory is kept.\n\
          Clear erases the memory.\n\
@@ -40,8 +45,8 @@ const SECTIONS: [(&str, &str); 8] = [
          the cell the address bus points at, so the one that was last read or written.\n\n\
          Click an address to put a breakpoint on it. Run stops when it gets there, press Run \
          again to carry on.\n\n\
-         A program starts at address 0. To start it somewhere else, set the program counter in \
-         the CPU view and press Set entry point to PC.",
+         A program starts at address 0. To start it somewhere else, switch on Advanced, set \
+         the program counter in the CPU card and press Set as entry point.",
     ),
     (
         "Console",
@@ -55,55 +60,67 @@ const SECTIONS: [(&str, &str); 8] = [
          they read the cell the program counter points at into the instruction register. \
          ins->mc then hands over to the steps of that instruction, and mc:=0 ends it. Most \
          instructions do pc++ just before that, the jumps set the program counter themselves.\n\n\
-         Tick Control unit under Views to watch this. The next step is marked with >. \
-         Micro Step (F11) carries out only that one, Step finishes the instruction.",
+         Switch on Advanced to watch this in the Control Unit card. The next step is marked \
+         with >. Micro Step (F11) carries out only that one, Step finishes the instruction.",
     ),
     (
         "By hand",
-        "Every micro step is also a button, so you can play control unit yourself. The \
-         transfers to and from the data bus sit above the grey bar, the arithmetic is in the \
-         CPU view and the rest in the Control unit view.\n\n\
-         Set address bus in the Memory view and the number on the grey bar put a value on a \
+        "In the advanced view every micro step is also a button, so you can play control unit \
+         yourself. The transfers to and from the data bus sit on the arrows above the blue \
+         bar, the arithmetic is in the CPU card and the rest in the Control Unit card.\n\n\
+         Set address bus in the Memory card and the number on the blue bar put a value on a \
          bus directly. Next to the accumulator it says whether it is zero, which is what TST, \
          JZ and the =0: steps look at.",
     ),
     (
         "Your own instructions",
-        "In the Control unit view type a name, press Record, press the micro step buttons in \
+        "In the Control Unit card type a name, press Record, press the micro step buttons in \
          the order the instruction should do them and press Stop recording. The new instruction \
-         gets the next free code and can be picked in the memory view like any other. Finish \
-         with pc++, or the program never moves on.\n\n\
+         gets the next free code and can be picked in the memory like any other. Finish with \
+         pc++, or the program never moves on.\n\n\
          The Instruction Set tab lists the steps of every instruction. There you can rename \
          instructions, change their codes and add aliases. Set Operation to Custom to edit the \
          steps: + adds one at the end, clicking a step removes it. Save Set writes the set to a \
-         file, and a saved program carries its set with it.\n\n\
-         Johnny switches to the names and codes of the Johnny simulator, Bonsai to its minimal \
-         five instructions.",
+         file, and a saved program carries its set with it.",
+    ),
+    (
+        "Johnny mode",
+        "Johnny mode, top right, makes the machine work like the Johnny simulator: decimal \
+         words, 1000 cells and Johnny's instructions TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, \
+         NULL and HLT. Each mode keeps its own program and instruction set, so switching back \
+         and forth loses nothing.\n\n\
+         Open Program reads Johnny's .ram files and Open Set on the Instruction Set tab reads \
+         its .mc microcode files. Both switch to Johnny mode by themselves. To write a .ram \
+         file for Johnny, save the program under a name ending in .ram.\n\n\
+         Bonsai on the Instruction Set tab loads Johnny's minimal five instructions.",
     ),
 ];
 
 const FROM_JOHNNY: [(&str, &str); 12] = [
-    ("New / Save / Load RAM", "Clear, Save Program, Open Program"),
+    (
+        "New / Save / Load RAM",
+        "Clear, Save Program, Open Program (reads and writes .ram)",
+    ),
     (
         "Macro step, Run, Pause, Reset",
         "Step, Run, Pause, Reset and the Speed slider",
     ),
-    ("Show control unit", "Views: Control unit"),
-    ("One micro step", "Micro Step in the Control unit view"),
+    ("Show control unit", "Advanced, top right"),
+    ("One micro step", "Micro Step in the Control Unit card"),
     (
         "Micro step buttons",
-        "Same names, on the data bus bar and in the CPU and Control unit views",
+        "Same names, on the bus arrows and in the CPU and Control Unit cards",
     ),
-    ("ManuellAb", "Set address bus in the Memory view"),
+    ("ManuellAb", "Set address bus in the Memory card"),
     ("ManuellDb", "The number on the data bus bar"),
-    ("RAM write panel", "Edit the cells in the Memory view"),
+    ("RAM write panel", "Edit the cells in the Memory card"),
     (
         "Record macrocode",
-        "Record in the Control unit view, or Custom on the Instruction Set tab",
+        "Record in the Control Unit card, or Custom on the Instruction Set tab",
     ),
     (
         "New / Save / Load microcode",
-        "Restore Default, Save Set, Open Set on the Instruction Set tab",
+        "Johnny, Save Set, Open Set (reads .mc) on the Instruction Set tab",
     ),
     ("Bonsai mode", "Bonsai on the Instruction Set tab"),
     ("=0? lamp", "\"= 0\" next to the accumulator"),
@@ -149,7 +166,11 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             for definition in &machine.instruction_set.definitions {
                 row(
                     ui,
-                    &format!("{:02X} {}", definition.code, definition.mnemonic),
+                    &format!(
+                        "{} {}",
+                        machine.instruction_set.digits(definition.code, 2, 2),
+                        definition.mnemonic
+                    ),
                     9,
                     definition.opcode.description(),
                 );
@@ -160,8 +181,9 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             ui.heading("Coming from Johnny");
             ui.label(
                 "Everything Johnny does is here, some of it under another name. Breakpoints, \
-                 the console with IN and OUT, MUL, DIV and JZ are extra. Johnny's own .ram and \
-                 .mc files cannot be opened.",
+                 the console with IN and OUT, MUL, DIV and JZ are extra. Two things are \
+                 missing: a set cannot be saved as a .mc file, and a changed fetch in a .mc \
+                 file is ignored.",
             );
 
             for (johnny, here) in FROM_JOHNNY {

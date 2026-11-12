@@ -1,7 +1,7 @@
 use crate::debugger::debug::Debug as DebugState;
 use crate::machine::InstructionSet;
 use crate::machine::Machine;
-use crate::program::Program;
+use crate::program::{Program, is_ram};
 use std::time::Instant;
 
 pub const MIN_SPEED: usize = 1;
@@ -21,6 +21,12 @@ pub struct AppState {
     pub mode: UiMode,
 
     pub machine: Machine,
+
+    // The machine of the other mode (standard or Johnny) and its program name.
+    pub other: (Machine, Option<String>),
+
+    // Off shows the simple view, on shows everything.
+    pub advanced: bool,
 
     pub running: bool,
     pub speed: usize,
@@ -47,6 +53,9 @@ impl AppState {
             mode: UiMode::Machine,
 
             machine: Machine::new(),
+            other: (Machine::new(), None),
+
+            advanced: false,
 
             running: false,
             speed: 16,
@@ -55,7 +64,7 @@ impl AppState {
 
             show_memory: true,
             show_registers: true,
-            show_control_unit: false,
+            show_control_unit: true,
             show_cpu: true,
             show_console: true,
 
@@ -95,7 +104,51 @@ impl AppState {
         }
     }
 
+    pub fn johnny(&self) -> bool {
+        self.machine.instruction_set.johnny
+    }
+
+    // Each mode has its own machine, so switching back and forth loses nothing.
+    pub fn toggle_johnny(&mut self) {
+        let johnny = self.johnny();
+
+        if self.other.0.instruction_set.johnny == johnny {
+            self.other = (Machine::new(), None);
+
+            if !johnny {
+                self.other.0.instruction_set = InstructionSet::johnny();
+            }
+        }
+
+        std::mem::swap(&mut self.machine, &mut self.other.0);
+        std::mem::swap(&mut self.program_name, &mut self.other.1);
+
+        self.running = false;
+        self.status_message = if johnny {
+            "Standard mode"
+        } else {
+            "Johnny mode: decimal words, 1000 cells"
+        }
+        .to_string();
+    }
+
+    // A set written for the other mode switches to that mode first.
+    pub fn use_set(&mut self, set: InstructionSet) {
+        if set.johnny != self.johnny() {
+            self.toggle_johnny();
+        }
+
+        self.status_message = format!("Loaded the {} instruction set", set.name);
+        self.machine.instruction_set = set;
+    }
+
     fn load(&mut self, program: Program) {
+        if let Some(set) = &program.instruction_set
+            && set.johnny != self.johnny()
+        {
+            self.toggle_johnny();
+        }
+
         program.apply(&mut self.machine);
 
         self.running = false;
@@ -104,9 +157,13 @@ impl AppState {
     }
 
     pub fn load_example(&mut self) {
-        let example = include_str!("../../assets/countdown.json");
+        let example = if self.johnny() {
+            Program::from_ram("sum", include_str!("../../assets/sum.ram"))
+        } else {
+            serde_json::from_str(include_str!("../../assets/countdown.json")).map_err(Into::into)
+        };
 
-        self.load(serde_json::from_str(example).expect("bundled example is valid"));
+        self.load(example.expect("bundled example is valid"));
     }
 
     pub fn reset(&mut self) {
@@ -124,14 +181,20 @@ impl AppState {
 
     pub fn open_program(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Program", &["json"])
+            .add_filter("Program", &["json", "ram"])
             .pick_file()
         else {
             return;
         };
 
         match Program::load(&path) {
-            Ok(program) => self.load(program),
+            Ok(program) => {
+                if is_ram(&path) && !self.johnny() {
+                    self.toggle_johnny();
+                }
+
+                self.load(program);
+            }
 
             Err(error) => {
                 self.status_message = format!("Could not load program: {error}");
@@ -147,6 +210,7 @@ impl AppState {
 
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Program", &["json"])
+            .add_filter("Johnny program", &["ram"])
             .set_file_name(format!("{name}.json"))
             .save_file()
         else {
@@ -173,17 +237,14 @@ impl AppState {
 
     pub fn open_instruction_set(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Instruction set", &["json"])
+            .add_filter("Instruction set", &["json", "mc"])
             .pick_file()
         else {
             return;
         };
 
         match InstructionSet::load(&path) {
-            Ok(set) => {
-                self.status_message = format!("Loaded instruction set {}", set.name);
-                self.machine.instruction_set = set;
-            }
+            Ok(set) => self.use_set(set),
 
             Err(error) => {
                 self.status_message = format!("Could not load instruction set: {error}");
