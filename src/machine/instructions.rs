@@ -96,6 +96,31 @@ impl MicroOp {
         MicroOp::Stop,
     ];
 
+    // The number a micro step has in a Johnny microcode file.
+    fn from_johnny(id: u32) -> Option<MicroOp> {
+        Some(match id {
+            1 => MicroOp::DbToRam,
+            2 => MicroOp::RamToDb,
+            3 => MicroOp::DbToIns,
+            4 => MicroOp::InsToAb,
+            5 => MicroOp::InsToMc,
+            7 => MicroOp::McZero,
+            8 => MicroOp::PcToAb,
+            9 => MicroOp::PcInc,
+            10 => MicroOp::PcIncIfZero,
+            11 => MicroOp::InsToPc,
+            12 => MicroOp::AccZero,
+            13 => MicroOp::Plus,
+            14 => MicroOp::Minus,
+            15 => MicroOp::AccToDb,
+            16 => MicroOp::AccInc,
+            17 => MicroOp::AccDec,
+            18 => MicroOp::DbToAcc,
+            19 => MicroOp::Stop,
+            _ => return None,
+        })
+    }
+
     // Button label, then what it does.
     pub const fn info(self) -> (&'static str, &'static str) {
         match self {
@@ -279,6 +304,10 @@ impl Definition {
 pub struct InstructionSet {
     pub name: String,
     pub definitions: Vec<Definition>,
+
+    // Johnny words: decimal, two digits of code then three of operand.
+    #[serde(default)]
+    pub johnny: bool,
 }
 
 impl InstructionSet {
@@ -294,21 +323,105 @@ impl InstructionSet {
             .map_or(Opcode::Nop.micro(), Definition::steps)
     }
 
+    // A word is 0x1234 (code 0x12, operand 0x34), or 12.345 for Johnny.
+    pub fn split(&self, word: i32) -> (i32, i32) {
+        if self.johnny {
+            (word / 1000, word % 1000)
+        } else {
+            ((word >> 8) & 0xff, word & 0xff)
+        }
+    }
+
+    pub fn join(&self, code: i32, operand: i32) -> i32 {
+        if self.johnny {
+            code * 1000 + operand
+        } else {
+            ((code & 0xff) << 8) | (operand & 0xff)
+        }
+    }
+
+    // The largest code, operand and word.
+    pub fn limits(&self) -> (i32, i32, i32) {
+        if self.johnny {
+            (19, 999, 19_999)
+        } else {
+            (255, 255, 0xffff)
+        }
+    }
+
+    // Numbers read as hex, or as decimal for Johnny.
+    pub fn digits(&self, value: i32, hex: usize, decimal: usize) -> String {
+        if self.johnny {
+            format!("{value:0decimal$}")
+        } else {
+            format!("{value:0hex$X}")
+        }
+    }
+
     pub fn free_code(&self) -> i32 {
-        (0..=255)
+        (0..=self.limits().0)
             .find(|code| self.find(*code).is_none())
             .unwrap_or(0)
     }
 
     pub fn mnemonic(&self, code: i32) -> String {
         self.find(code).map_or_else(
-            || format!("{code:02X} - ?"),
+            || format!("{} - ?", self.digits(code, 2, 2)),
             |definition| definition.mnemonic.clone(),
         )
     }
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        Ok(serde_json::from_str(&fs::read_to_string(path)?)?)
+        let text = fs::read_to_string(path)?;
+
+        if path.extension().is_some_and(|extension| extension == "mc") {
+            let name = path.file_stem().unwrap_or_default().to_string_lossy();
+
+            return Self::from_mc(&name, &text);
+        }
+
+        Ok(serde_json::from_str(&text)?)
+    }
+
+    // A Johnny microcode file: 200 micro step numbers, ten per instruction code, then the names.
+    // ponytail: the fetch block (code 0) is not read, the fetch here is fixed.
+    pub fn from_mc(name: &str, text: &str) -> anyhow::Result<Self> {
+        let lines: Vec<&str> = text.lines().map(str::trim).collect();
+        let mut set = Self::preset(name, true, &[(0, "NOP", Opcode::Nop)]);
+
+        for code in 1..20 {
+            let mut micro = Vec::new();
+
+            // A long instruction may run on into the next block.
+            for line in lines.iter().take(200).skip(code * 10) {
+                let Some(op) = MicroOp::from_johnny(line.parse()?) else {
+                    break;
+                };
+
+                micro.push(op);
+
+                if op == MicroOp::McZero {
+                    break;
+                }
+            }
+
+            if !micro.is_empty() {
+                let mnemonic = lines.get(200 + code).copied().unwrap_or_default();
+
+                set.definitions.push(Definition {
+                    code: code as i32,
+                    mnemonic: if mnemonic.is_empty() {
+                        format!("{code:02}")
+                    } else {
+                        mnemonic.to_string()
+                    },
+                    opcode: Opcode::Custom,
+                    micro,
+                });
+            }
+        }
+
+        Ok(set)
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
@@ -319,9 +432,10 @@ impl InstructionSet {
 }
 
 impl InstructionSet {
-    fn preset(name: &str, table: &[(i32, &str, Opcode)]) -> Self {
+    fn preset(name: &str, johnny: bool, table: &[(i32, &str, Opcode)]) -> Self {
         Self {
             name: name.to_string(),
+            johnny,
 
             definitions: table
                 .iter()
@@ -339,6 +453,7 @@ impl InstructionSet {
     pub fn johnny() -> Self {
         Self::preset(
             "Johnny",
+            true,
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "TAKE", Opcode::Load),
@@ -359,6 +474,7 @@ impl InstructionSet {
     pub fn bonsai() -> Self {
         Self::preset(
             "Bonsai",
+            true,
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "INC", Opcode::Inc),
@@ -375,6 +491,7 @@ impl Default for InstructionSet {
     fn default() -> Self {
         Self::preset(
             "Default",
+            false,
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "LOAD", Opcode::Load),
