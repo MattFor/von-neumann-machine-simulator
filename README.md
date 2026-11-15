@@ -1,19 +1,10 @@
 # Von Neumann Machine Simulator
 
-A desktop simulator of a simple accumulator machine: memory, registers, a CPU
-and the data bus between them, with a console for input and output.
+[![CI](https://github.com/MattFor/von-neumann-machine-simulator/actions/workflows/ci.yml/badge.svg)](https://github.com/MattFor/von-neumann-machine-simulator/actions/workflows/ci.yml)
 
-Created By MattFor and Krisunio
+A desktop simulator of a simple accumulator machine: memory, registers, a CPU and the data bus between them, with a console for input and output.
 
-## Run
-
-```sh
-cargo run --release
-cargo run --release --features debug-mode   # adds the Debug tab and panel outlines
-cargo test
-```
-
-## Use
+## Usage
 
 Click **Example** to load a small countdown program, then **Run** or **Step**.
 The **Guide** tab explains everything in the app, and every button has a tooltip.
@@ -58,7 +49,7 @@ view switches. **Johnny mode** next to it makes the machine work like the
 Speed, visible panels, the view, the mode, theme and window size are remembered
 between launches.
 
-## Instructions
+### Instructions
 
 | Code | Name  | Effect                                      |
 | ---- | ----- | ------------------------------------------- |
@@ -85,7 +76,7 @@ Every instruction is a list of micro steps (`ins->ab`, `ram->db`, `db->acc`, ...
 runs after the fetch (`pc->ab`, `ram->db`, `db->ins`, `ins->mc`). The Guide tab and the
 Instruction Set tab list them all.
 
-## Program files
+### Program files
 
 Programs are JSON, see [`assets/countdown.json`](assets/countdown.json):
 
@@ -96,3 +87,15 @@ Programs are JSON, see [`assets/countdown.json`](assets/countdown.json):
 `memory` lists the words from address 0. Saved programs also carry the instruction
 set they were written with, under `instruction_set`, and opening one switches to
 that set. Files without it keep the set that is currently loaded.
+
+## Building
+
+```sh
+cargo run --release
+cargo run --release --features debug-mode   # adds the Debug tab and panel outlines
+cargo test
+```
+
+## Contributing
+
+Created By MattFor and Krisunio
