@@ -28,8 +28,9 @@ impl Debug {
             "SetMem" => {
                 let result = self.set_memory(state, raw_split);
                 let (line, valid) = match result {
-                    Some((address, cell)) => (Self::address_reply(raw, address, cell), true),
-                    None => (raw, false),
+                    Ok((address, cell)) => (Self::address_reply(raw, address, cell), true),
+                    Err(Some(cell)) => (format!("{raw} (cell {cell} is fixed)"), false),
+                    Err(None) => (raw, false),
                 };
                 self.command_history.push((line, valid));
             }
@@ -59,25 +60,35 @@ impl Debug {
         }
     }
 
-    fn set_memory(&self, state: &mut AppState, arguments: Vec<&str>) -> Option<(i32, i32)> {
+    // Err(Some(cell)) when the format fixes that cell.
+    fn set_memory(
+        &self,
+        state: &mut AppState,
+        arguments: Vec<&str>,
+    ) -> Result<(i32, i32), Option<i32>> {
         if arguments.len() < 3 {
-            return None;
+            return Err(None);
         }
 
         let (Some(address), Some(value)) = (parse_value(arguments[1]), parse_value(arguments[2]))
         else {
-            return None;
+            return Err(None);
         };
 
         if !(0..MEMORY_SIZE as i32).contains(&address) {
-            return None;
+            return Err(None);
         }
 
-        let cells = state.machine.instruction_set.format.cells().max(1) as i32;
-        let cell = address.rem_euclid(cells);
+        let format = state.machine.instruction_set.format;
+        let cell = address.rem_euclid(format.cells().max(1) as i32);
+
+        if format.fixed().is_some_and(|(fixed, _)| fixed == cell as usize) {
+            return Err(Some(cell));
+        }
+
         state.machine.memory.write(cell as usize, value);
 
-        Some((address, cell))
+        Ok((address, cell))
     }
 
     fn set_accumulator(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
@@ -180,6 +191,21 @@ mod tests {
                 ("SetMem 500 17 (address 500 reduced to 0)".to_string(), true),
                 ("SetPc 105 (address 105 reduced to 5)".to_string(), true),
             ]
+        );
+    }
+
+    #[test]
+    fn setmem_refuses_a_fixed_cell() {
+        let mut state = AppState::new();
+        state.machine.instruction_set = InstructionSet::cardiac();
+        let mut debug = Debug::new();
+
+        debug.send(&mut state, "SetMem 100 5".to_string());
+
+        assert_eq!(state.machine.memory.read(0), 0);
+        assert_eq!(
+            debug.command_history,
+            [("SetMem 100 5 (cell 0 is fixed)".to_string(), false)]
         );
     }
 }

@@ -109,6 +109,7 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
     let format = &set.format;
     let cells = format.cells();
     let last = format.text(cells as i32 - 1, 1);
+    let fixed = format.fixed();
     let (_, max_operand, max_word) = set.limits();
 
     let mut labels = HashMap::new();
@@ -190,9 +191,11 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
             }
 
             Some(op) => {
-                if let Some(first) = filled.insert(address, line) {
-                    let cell = format.text(address as i32, 1);
+                let cell = format.text(address as i32, 1);
 
+                if fixed.is_some_and(|(fixed, _)| fixed == address) {
+                    errors.push((line, format!("cell {cell} is fixed, start after it with ORG")));
+                } else if let Some(first) = filled.insert(address, line) {
                     errors.push((line, format!("cell {cell} is already filled by line {first}")));
                 }
 
@@ -243,8 +246,18 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
     };
 
     // Second pass: the words, now that every label is known.
-    let length = statements.iter().map(|statement| statement.address + 1).max();
-    let mut memory = vec![0; length.unwrap_or(0)];
+    // The fixed cell holds its word, as the machine reads it.
+    let length = statements
+        .iter()
+        .map(|statement| statement.address)
+        .chain(fixed.map(|(cell, _)| cell))
+        .max()
+        .map_or(0, |address| address + 1);
+    let mut memory = vec![0; length];
+
+    if let Some((cell, word)) = fixed {
+        memory[cell] = word;
+    }
 
     for statement in &statements {
         let mnemonic = statement.mnemonic;
@@ -341,26 +354,36 @@ pub fn disassemble(memory: &[i32], entry_point: u16, set: &InstructionSet) -> St
         .map_or(0, |index| index + 1);
 
     const ZERO_GAP_THRESHOLD: usize = 4;
+    let fixed = set.format.fixed().map(|(cell, _)| cell);
+    // A word reads the same in any cell, so `line` tries it without the fixed one.
+    let mut free = set.clone();
+    free.format.fixed_cell = None;
     let mut lines = Vec::new();
     let mut address = 0;
+    // Where the assembler would put the next statement.
+    let mut next = 0;
     let mut first_statement = None;
 
     while address < length {
-        if memory[address] == 0 {
-            let end = (address + 1..length)
-                .find(|&next| memory[next] != 0)
-                .unwrap_or(length);
+        let zeros = memory[address..length]
+            .iter()
+            .take_while(|word| **word == 0)
+            .count();
 
-            if end - address > ZERO_GAP_THRESHOLD {
-                lines.push(format!("ORG {}", set.format.text(end as i32, 1)));
-                address = end;
-                continue;
-            }
+        // Long zero runs and the fixed cell are skipped with an ORG.
+        if zeros > ZERO_GAP_THRESHOLD || fixed == Some(address) {
+            address += zeros.max(1);
+            continue;
+        }
+
+        if address != next {
+            lines.push(format!("ORG {}", set.format.text(address as i32, 1)));
         }
 
         first_statement.get_or_insert(address);
-        lines.push(line(memory[address], set));
+        lines.push(line(memory[address], &free));
         address += 1;
+        next = address;
     }
 
     let mut text = lines.join("\n");
@@ -655,6 +678,7 @@ mod tests {
         );
 
         assert_eq!(entry_point, 10);
+        assert_eq!(memory[..2], [1, 0], "cell 0 holds the loader");
         assert_eq!(memory[10..], [17, 117, 216, 617, 517, 910, -42, 0]);
         assert!(disassemble(&memory, entry_point, &set).ends_with("HRS 10\nDAT -42\n"));
         assert_eq!(output, "-12\n");
@@ -804,6 +828,11 @@ mod tests {
                 "Skipcond 100",
                 Some(&InstructionSet::marie()),
                 "line 1: Skipcond needs one of 0, 400, 800",
+            ),
+            (
+                "; no ORG\nINP 20\nHRS 1",
+                Some(&InstructionSet::cardiac()),
+                "line 2: cell 0 is fixed, start after it with ORG",
             ),
         ] {
             let set = set.cloned().unwrap_or_default();

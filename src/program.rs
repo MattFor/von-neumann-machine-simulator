@@ -153,8 +153,9 @@ pub fn examples() -> Vec<Example> {
 }
 
 impl Program {
+    // What the machine reads, so a fixed cell holds its word.
     pub fn from_machine(name: String, machine: &Machine) -> Self {
-        let data = machine.memory.data();
+        let data: Vec<i32> = (0..MEMORY_SIZE).map(|address| machine.read(address)).collect();
 
         let length = data
             .iter()
@@ -584,6 +585,29 @@ mod tests {
 
         assert!(error.to_string().contains("MARIE's words"));
         assert!(!written);
+    }
+
+    #[test]
+    fn a_fixed_cell_is_saved_as_its_word() {
+        let [json, asm] = ["json", "asm"].map(|extension| {
+            std::env::temp_dir().join(format!("vnm-test-fixed.{extension}"))
+        });
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::cardiac();
+        machine.memory.load(&[5, 900]);
+        machine.entry_point = 1;
+
+        let saved = Program::from_machine("x".to_string(), &machine);
+        saved.save(&json).unwrap();
+        saved.save(&asm).unwrap();
+        let text = fs::read_to_string(&asm).unwrap();
+        let loaded = [&json, &asm].map(|path| Program::load(path, &machine.instruction_set));
+        fs::remove_file(&json).unwrap();
+        fs::remove_file(&asm).unwrap();
+
+        assert_eq!(saved.memory, [1, 900]);
+        assert_eq!(text, "ORG 1\nHRS 0\n");
+        assert_eq!(loaded.map(|program| program.unwrap().memory), [[1, 900], [1, 900]]);
     }
 
     #[test]

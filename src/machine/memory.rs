@@ -33,6 +33,8 @@ impl Memory {
         self.data.fill(0);
     }
 
+    // Raw cells, under any fixed one; the app reads through Machine::read.
+    #[cfg(test)]
     pub fn data(&self) -> &[i32] {
         &self.data
     }

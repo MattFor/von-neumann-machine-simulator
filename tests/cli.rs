@@ -330,6 +330,41 @@ fn machine_errors_go_to_stderr() {
 }
 
 #[test]
+fn the_trace_shows_an_instruction_before_its_error() {
+    let path = temp("divide-by-zero-traced.asm");
+    fs::write(&path, "DIV 0\n").unwrap();
+
+    let (_, stderr, _) = run(&[&path, "--machine", "standard", "--trace"]);
+    fs::remove_file(&path).unwrap();
+
+    assert!(
+        stderr.starts_with("00  06.00  DIV 00  acc 0\nerror: division by zero\n"),
+        "{stderr}"
+    );
+}
+
+#[test]
+fn a_mas_file_runs_only_as_marie() {
+    let (mas, out) = (temp("echo.mas"), temp("echo.json"));
+    fs::write(&mas, "Input\nOutput\nHalt\n").unwrap();
+
+    let refused = [
+        run(&[&mas, "--machine", "lmc", "--input", "5"]),
+        convert(&[&mas, &out, "--machine", "lmc"]),
+    ];
+    let marie = run(&[&mas, "--machine", "MARIE", "--input", "5"]);
+    fs::remove_file(&mas).unwrap();
+
+    for (stdout, stderr, code) in refused {
+        assert_eq!((stdout.as_str(), code), ("", 1));
+        assert!(stderr.contains("always MARIE"), "{stderr}");
+    }
+
+    assert!(fs::metadata(&out).is_err());
+    assert_eq!((marie.0.as_str(), marie.2), ("5\n", 0));
+}
+
+#[test]
 fn help_is_printed() {
     let (stdout, _, code) = run(&["--help"]);
 

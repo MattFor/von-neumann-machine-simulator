@@ -1,4 +1,4 @@
-use super::{Machine, PcOverflow, instructions::MicroOp};
+use super::{DataEncoding, Machine, PcOverflow, instructions::MicroOp};
 
 pub fn execute(machine: &mut Machine, op: MicroOp) {
     let operand = machine.instruction_set.split(machine.cpu.ir as i32).1 as u16;
@@ -138,6 +138,10 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
             machine.set_arithmetic_acc(value);
         }
 
+        // A sign and three digits; CARDIAC's STO keeps the low ones of its wider accumulator.
+        MicroOp::AccToDb if machine.instruction_set.format.data_encoding == DataEncoding::Lmc => {
+            machine.set_data_bus(acc % 1000)
+        }
         MicroOp::AccToDb => machine.set_data_bus(acc),
         MicroOp::DbToAcc => machine.set_acc(mbr),
 

@@ -156,15 +156,14 @@ impl Machine {
         self.cpu.mbr = match self.instruction_set.format.data_encoding {
             DataEncoding::Unsigned => value.clamp(0, 0xffff),
             DataEncoding::TwosComplement => value.clamp(i16::MIN as i32, i16::MAX as i32),
-            // A sign and three digits; CARDIAC's STO keeps the low ones of its wider accumulator.
-            DataEncoding::Lmc => value % 1000,
+            DataEncoding::Lmc => value.clamp(-999, 999),
         };
     }
 
     // What the memory cell holds, unless the format fixes it.
     pub fn read(&self, address: usize) -> i32 {
-        match self.instruction_set.format.fixed_cell {
-            Some((cell, word)) if cell as usize == address => word,
+        match self.instruction_set.format.fixed() {
+            Some((cell, word)) if cell == address => word,
             _ => self.memory.read(address),
         }
     }
@@ -1190,6 +1189,17 @@ mod tests {
             machine.step();
 
             assert_eq!(machine.memory.read(10), stored, "{acc}");
+        }
+    }
+
+    #[test]
+    fn cardiac_inp_clamps_input_to_the_word_range() {
+        for (input, stored) in [(1000, 999), (2500, 999), (-1000, -999), (42, 42)] {
+            let mut machine = cardiac(&[10]);
+            machine.push_input(input);
+            machine.step();
+
+            assert_eq!(machine.memory.read(10), stored, "{input}");
         }
     }
 
