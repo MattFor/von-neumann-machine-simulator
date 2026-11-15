@@ -71,7 +71,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
     memory_grid_panel(ui, machine, footer_height);
 
     let format = machine.instruction_set.format;
-    let value = format.value(machine.memory.read(machine.cpu.mar as usize));
+    let value = format.value(machine.read(machine.cpu.mar as usize));
     let text = match format.radix {
         10 => value.to_string(),
         _ => format!(
@@ -185,7 +185,11 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                 })
                 .show(ui, |ui| {
                     for address in rows {
-                        let cell = machine.memory.read(address);
+                        let cell = machine.read(address);
+                        let fixed = set
+                            .format
+                            .fixed_cell
+                            .is_some_and(|(fixed, _)| fixed as usize == address);
 
                         let (code, mut operand, decoded) = decode(&set, cell);
                         let mut value = set.format.value(cell);
@@ -207,7 +211,12 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                                     .selectable(false)
                                     .sense(egui::Sense::click()),
                             )
-                            .on_hover_text("Click to toggle a breakpoint");
+                            .on_hover_text(if fixed {
+                                "This cell always holds the same word and can't be changed. \
+                                 Click to toggle a breakpoint"
+                            } else {
+                                "Click to toggle a breakpoint"
+                            });
 
                         if address_cell.clicked() && !machine.breakpoints.remove(&(address as u16))
                         {

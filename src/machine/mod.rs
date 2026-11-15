@@ -133,9 +133,17 @@ impl Machine {
         self.cpu.mbr = match self.instruction_set.format.data_encoding {
             DataEncoding::Unsigned => value.clamp(0, 0xffff),
             DataEncoding::TwosComplement => value.clamp(i16::MIN as i32, i16::MAX as i32),
-            // Teaching LMC simulators commonly let mailboxes keep signed values from -999 to 999.
-            DataEncoding::Lmc => value.clamp(-999, 999),
+            // A sign and three digits; CARDIAC's STO keeps the low ones of its wider accumulator.
+            DataEncoding::Lmc => value % 1000,
         };
+    }
+
+    // What the memory cell holds, unless the format fixes it.
+    pub fn read(&self, address: usize) -> i32 {
+        match self.instruction_set.format.fixed_cell {
+            Some((cell, word)) if cell as usize == address => word,
+            _ => self.memory.read(address),
+        }
     }
 
     pub(super) fn memory_to_data_bus(&mut self, value: i32) {
@@ -260,7 +268,7 @@ impl Machine {
     }
 
     pub fn current_instruction(&self) -> String {
-        let cell = self.memory.read(self.address(self.cpu.pc as i32) as usize);
+        let cell = self.read(self.address(self.cpu.pc as i32) as usize);
 
         self.describe(self.instruction_set.format.fetched(cell))
     }
@@ -791,6 +799,7 @@ mod tests {
             let expected = match example.name {
                 "Standard countdown" => "5\n4\n3\n2\n1\n",
                 "LMC echo" | "MARIE echo" => "42\n",
+                "CARDIAC digits" => "4\n7\n2\n",
                 "Johnny sum" | "Bonsai increment" => "",
                 name => panic!("unexpected example {name}"),
             };
@@ -1025,8 +1034,10 @@ mod tests {
     fn the_fetched_word_of_a_cell_is_what_the_fetch_leaves_in_the_instruction_register() {
         for preset in InstructionSet::presets() {
             for cell in [0, 5, 902, -1, -999, 1500, 0x8400, 0xffff, 70_000] {
-                let mut machine = machine_with(&[cell]);
+                // Cell 1, since CARDIAC's cell 0 is fixed.
+                let mut machine = machine_with(&[0, cell]);
                 machine.instruction_set = preset.clone();
+                machine.cpu.pc = 1;
 
                 for op in FETCH {
                     machine.manual(op);
@@ -1040,6 +1051,133 @@ mod tests {
                 );
             }
         }
+    }
+
+    // CARDIAC's cell 00 is its loader, so a program starts at 01.
+    fn cardiac(program: &[i32]) -> Machine {
+        let mut machine = machine_with(&[&[0], program].concat());
+        machine.instruction_set = InstructionSet::cardiac();
+        machine.entry_point = 1;
+        machine.reset();
+        machine
+    }
+
+    #[test]
+    fn every_cardiac_instruction_does_what_its_card_says() {
+        let mut machine = cardiac(&[20, 120, 221, 722, 307, 900, 623, 523, 410, 830]);
+        machine.memory.write(21, 5);
+        machine.memory.write(22, 20);
+        machine.memory.write(30, 931);
+        machine.set_acc(3);
+        machine.push_input(7);
+
+        let step = |machine: &mut Machine| {
+            machine.step();
+            (machine.cpu.acc, machine.cpu.pc)
+        };
+
+        assert_eq!(step(&mut machine), (3, 2), "INP 20 leaves the accumulator alone");
+        assert_eq!(machine.memory.read(20), 7);
+        assert_eq!(step(&mut machine), (7, 3), "CLA 20");
+        assert_eq!(step(&mut machine), (12, 4), "ADD 21");
+        assert_eq!(step(&mut machine), (-8, 5), "SUB 22");
+        assert_eq!(step(&mut machine), (-8, 7), "TAC 07 jumps on a negative accumulator");
+        assert_eq!(step(&mut machine), (-8, 8), "STO 23");
+        assert_eq!(machine.memory.read(23), -8);
+        assert_eq!(step(&mut machine), (-8, 9), "OUT 23");
+        assert_eq!(machine.output, "-8\n");
+        assert_eq!(step(&mut machine), (-80, 10), "SFT 10");
+        assert_eq!(step(&mut machine), (-80, 30), "JMP 30");
+        assert_eq!(machine.memory.read(99), 811);
+        assert_eq!(step(&mut machine), (-80, 31), "HRS 31");
+        assert!(machine.halted);
+
+        for acc in [0, 1] {
+            let mut machine = cardiac(&[307]);
+            machine.set_acc(acc);
+            machine.step();
+
+            assert_eq!(machine.cpu.pc, 2, "TAC on {acc}");
+        }
+    }
+
+    #[test]
+    fn cardiac_jmp_leaves_a_jump_back_that_returns() {
+        // 01 JMP 10, 02 HRS 00; 10 CLA 99, 11 STO 12, 12 the jump back.
+        let mut machine = cardiac(&[810, 900]);
+        machine.memory.write(10, 199);
+        machine.memory.write(11, 612);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(12), 802);
+        assert_eq!(machine.cpu.pc, 0);
+    }
+
+    #[test]
+    fn cardiac_sft_drops_the_digits_it_shifts_out_and_keeps_the_sign() {
+        for (acc, word, expected) in [
+            (1234, 400, 1234),
+            (1234, 410, 2340),
+            (1234, 401, 123),
+            (1234, 422, 34),
+            (1234, 413, 2),
+            (-1234, 411, -234),
+            (1234, 440, 0),
+            (1234, 450, 0),
+            (1234, 405, 0),
+            (-9999, 499, 0),
+        ] {
+            let mut machine = cardiac(&[word]);
+            machine.set_acc(acc);
+            machine.step();
+
+            assert_eq!(machine.cpu.acc, expected, "{acc} {word}");
+        }
+    }
+
+    #[test]
+    fn cardiac_sto_keeps_the_low_three_digits_and_the_sign() {
+        for (acc, stored) in [(1234, 234), (-1234, -234), (9999, 999), (-5, -5), (1000, 0)] {
+            let mut machine = cardiac(&[610]);
+            machine.set_acc(acc);
+            machine.step();
+
+            assert_eq!(machine.memory.read(10), stored, "{acc}");
+        }
+    }
+
+    #[test]
+    fn cardiac_cell_00_always_holds_its_loader() {
+        // STO 00, then a write by hand.
+        let mut machine = cardiac(&[600, 100]);
+        machine.set_acc(42);
+        machine.run_steps(2);
+
+        assert_eq!((machine.read(0), machine.cpu.acc), (1, 1));
+
+        machine.memory.write(0, 5);
+        machine.cpu.pc = 0;
+
+        assert_eq!(machine.read(0), 1);
+        assert_eq!(machine.current_instruction(), "0.01  INP 01");
+
+        // From 00 the loader reads the next input into 01 and runs it: HRS 00 here.
+        let mut boot = cardiac(&[]);
+        boot.entry_point = 0;
+        boot.reset();
+        boot.push_input(900);
+        boot.run_steps(10);
+
+        assert!(boot.halted);
+        assert_eq!((boot.memory.read(1), boot.cpu.pc), (900, 0));
+
+        // Other machines have no fixed cell.
+        let mut lmc = machine_with(&[5]);
+        lmc.instruction_set = InstructionSet::lmc();
+
+        assert_eq!(lmc.read(0), 5);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

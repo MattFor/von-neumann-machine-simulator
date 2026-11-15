@@ -46,16 +46,19 @@ pub enum MicroOp {
     InsToPc,
     InsToPcIfZero,
     InsToPcIfNonNegative,
+    InsToPcIfNegative,
     InsToMc,
     McZero,
     PcToAb,
     PcToDb,
+    ReturnToDb,
     PcInc,
     PcIncIfZero,
     PcIncIfPositive,
     PcIncIfNegative,
     DbToAb,
     AbToPc,
+    AbLast,
     AccZero,
     AccInc,
     AccDec,
@@ -63,10 +66,13 @@ pub enum MicroOp {
     Minus,
     Times,
     Divide,
+    Shift,
     AccToDb,
     DbToAcc,
     Input,
+    InputToDb,
     Output,
+    DbToOut,
     Stop,
 }
 
@@ -79,7 +85,7 @@ pub const FETCH: [MicroOp; 4] = [
 ];
 
 impl MicroOp {
-    pub const ALL: [MicroOp; 30] = [
+    pub const ALL: [MicroOp; 36] = [
         MicroOp::DbToRam,
         MicroOp::RamToDb,
         MicroOp::DbToIns,
@@ -88,16 +94,19 @@ impl MicroOp {
         MicroOp::InsToPc,
         MicroOp::InsToPcIfZero,
         MicroOp::InsToPcIfNonNegative,
+        MicroOp::InsToPcIfNegative,
         MicroOp::InsToMc,
         MicroOp::McZero,
         MicroOp::PcToAb,
         MicroOp::PcToDb,
+        MicroOp::ReturnToDb,
         MicroOp::PcInc,
         MicroOp::PcIncIfZero,
         MicroOp::PcIncIfPositive,
         MicroOp::PcIncIfNegative,
         MicroOp::DbToAb,
         MicroOp::AbToPc,
+        MicroOp::AbLast,
         MicroOp::AccZero,
         MicroOp::AccInc,
         MicroOp::AccDec,
@@ -105,10 +114,13 @@ impl MicroOp {
         MicroOp::Minus,
         MicroOp::Times,
         MicroOp::Divide,
+        MicroOp::Shift,
         MicroOp::AccToDb,
         MicroOp::DbToAcc,
         MicroOp::Input,
+        MicroOp::InputToDb,
         MicroOp::Output,
+        MicroOp::DbToOut,
         MicroOp::Stop,
     ];
 
@@ -166,6 +178,7 @@ impl MicroOp {
                 ">=0:ins->pc",
                 "Jump only if the accumulator is zero or positive",
             ),
+            MicroOp::InsToPcIfNegative => ("<0:ins->pc", "Jump only if the accumulator is negative"),
             MicroOp::InsToMc => (
                 "ins->mc",
                 "Decode: carry on with the micro steps of the instruction in the instruction register",
@@ -176,6 +189,11 @@ impl MicroOp {
             ),
             MicroOp::PcToAb => ("pc->ab", "Put the program counter on the address bus"),
             MicroOp::PcToDb => ("pc->db", "Put the program counter on the data bus"),
+            MicroOp::ReturnToDb => (
+                "ret->db",
+                "Put a jump back on the data bus: the code of the instruction register with the \
+                 program counter as operand, like CARDIAC's JMP leaves in cell 99",
+            ),
             MicroOp::PcInc => ("pc++", "Move the program counter to the next cell"),
             MicroOp::PcIncIfZero => (
                 "=0:pc++",
@@ -191,6 +209,7 @@ impl MicroOp {
             ),
             MicroOp::DbToAb => ("db->ab", "Put the data bus on the address bus"),
             MicroOp::AbToPc => ("ab->pc", "Copy the address bus into the program counter"),
+            MicroOp::AbLast => ("ab:=last", "Point the address bus at the last memory cell"),
             MicroOp::AccZero => ("acc:=0", "Set the accumulator to zero"),
             MicroOp::AccInc => ("acc++", "Add one to the accumulator"),
             MicroOp::AccDec => ("acc--", "Subtract one from the accumulator"),
@@ -201,13 +220,23 @@ impl MicroOp {
                 "divide",
                 "Divide the accumulator by the data bus; halts if the data bus is zero",
             ),
+            MicroOp::Shift => (
+                "shift",
+                "Shift the accumulator left by the operand's first digit, then right by its last; \
+                 digits shifted out of the accumulator are lost, the sign stays",
+            ),
             MicroOp::AccToDb => ("acc->db", "Copy the accumulator onto the data bus"),
             MicroOp::DbToAcc => ("db->acc", "Copy the data bus into the accumulator"),
             MicroOp::Input => (
                 "in->acc",
                 "Take the next console input into the accumulator; waits if there is none",
             ),
+            MicroOp::InputToDb => (
+                "in->db",
+                "Take the next console input onto the data bus; waits if there is none",
+            ),
             MicroOp::Output => ("acc->out", "Print the accumulator on the console"),
+            MicroOp::DbToOut => ("db->out", "Print the data bus on the console"),
             MicroOp::Stop => ("stop", "Halt the machine"),
         }
     }
@@ -594,14 +623,15 @@ impl InstructionSet {
         }
     }
 
-    // The built-in sets: standard, Johnny, Bonsai, LMC and MARIE.
-    pub fn presets() -> [Self; 5] {
+    // The built-in sets: standard, Johnny, Bonsai, LMC, MARIE and CARDIAC.
+    pub fn presets() -> [Self; 6] {
         [
             Self::default(),
             Self::johnny(),
             Self::bonsai(),
             Self::lmc(),
             Self::marie(),
+            Self::cardiac(),
         ]
     }
 
@@ -789,6 +819,42 @@ impl InstructionSet {
             },
         ]);
 
+        set
+    }
+
+    // Bell Labs' cardboard computer.
+    pub fn cardiac() -> Self {
+        use MicroOp::*;
+
+        let mut set = Self::preset(
+            "CARDIAC",
+            Format::cardiac(),
+            &[
+                (1, "CLA", Opcode::Load),
+                (2, "ADD", Opcode::Add),
+                (6, "STO", Opcode::Store),
+                (7, "SUB", Opcode::Sub),
+            ],
+        );
+
+        for (code, mnemonic, micro) in [
+            (0, "INP", vec![InsToAb, InputToDb, DbToRam, PcInc, McZero]),
+            (3, "TAC", vec![PcInc, InsToPcIfNegative, McZero]),
+            (4, "SFT", vec![Shift, PcInc, McZero]),
+            (5, "OUT", vec![InsToAb, RamToDb, DbToOut, PcInc, McZero]),
+            (8, "JMP", vec![PcInc, AbLast, ReturnToDb, DbToRam, InsToPc, McZero]),
+            (9, "HRS", vec![InsToPc, Stop, McZero]),
+        ] {
+            set.definitions.push(Definition {
+                code,
+                mnemonic: mnemonic.to_string(),
+                opcode: Opcode::Custom,
+                micro,
+                ..Default::default()
+            });
+        }
+
+        set.definitions.sort_by_key(|definition| definition.code);
         set
     }
 }

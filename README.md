@@ -50,7 +50,7 @@ The keys work on the Machine tab.
 
 ### Machines
 
-The **Machine** picker has five presets. Each keeps its own program, so switching
+The **Machine** picker has six presets. Each keeps its own program, so switching
 loses nothing.
 
 | Machine             | Words                                                       |
@@ -60,6 +60,12 @@ loses nothing.
 | Bonsai              | Johnny's words with its minimal set: INC, DEC, JMP, TST, HLT |
 | Little Man Computer | Three decimal digits, 100 mailboxes, values -999 to 999     |
 | MARIE               | 16-bit hex: one digit of code, three of operand. 4096 cells |
+| CARDIAC             | A sign and three decimal digits, 100 cells, a four-digit accumulator |
+
+CARDIAC is Bell Labs' cardboard computer. Its cell 00 always holds `001`, the
+loader: run from 00, it reads the next input into 01 and carries on there. `JMP`
+leaves a jump back (`8xx`) in cell 99, `SFT xy` shifts the accumulator `x` digits
+left, then `y` right, and `STO` keeps the accumulator's low three digits.
 
 Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
 **Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
@@ -142,6 +148,10 @@ count:  DAT 5
 
 Saving under `.asm` writes this form: words that are no instruction come out as
 `DAT`, and a start other than 0 as `END n`.
+
+Files ending in `.mas` are MARIE's own assembly. They are always read in MARIE's
+mnemonics, whatever machine is loaded, and opening one switches to MARIE. Saving
+a MARIE program under `.mas` writes one.
 
 ## Building
 

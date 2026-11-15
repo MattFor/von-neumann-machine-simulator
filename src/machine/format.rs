@@ -55,6 +55,10 @@ pub struct Format {
 
     // Run stops on an instruction that leaves the program counter where it was.
     pub stop_when_pc_stays: bool,
+
+    // A cell and the word it always reads as, like CARDIAC's loader 001 in cell 00.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub fixed_cell: Option<(u32, i32)>,
 }
 
 // The standard machine: hex words, a byte of code then a byte of operand.
@@ -72,6 +76,7 @@ impl Default for Format {
             unknown_code: UnknownCode::Nop,
             pc_overflow: PcOverflow::Wrap,
             stop_when_pc_stays: false,
+            fixed_cell: None,
         }
     }
 }
@@ -105,6 +110,16 @@ impl Format {
             acc_max: 999,
             data_encoding: DataEncoding::Lmc,
             ..Self::default()
+        }
+    }
+
+    // LMC's signed three-digit cells with a four-digit accumulator, and the loader in cell 00.
+    pub fn cardiac() -> Self {
+        Self {
+            acc_min: -9999,
+            acc_max: 9999,
+            fixed_cell: Some((0, 1)),
+            ..Self::lmc()
         }
     }
 

@@ -122,7 +122,8 @@ pub fn show(ui: &mut Ui, set: &mut InstructionSet) {
                         (
                             DataEncoding::Lmc,
                             "Signed cells",
-                            "A cell keeps its sign, from -999 to 999, like on the Little Man Computer",
+                            "A cell keeps its sign, from -999 to 999, like on the Little Man Computer \
+                             and CARDIAC; a wider value keeps its low three digits",
                         ),
                     ],
                 );

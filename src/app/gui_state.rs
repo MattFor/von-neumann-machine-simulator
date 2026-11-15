@@ -8,7 +8,7 @@ pub const MIN_SPEED: usize = 1;
 pub const MAX_SPEED: usize = 10_000;
 
 // Name and description of every machine, in the order of InstructionSet::presets.
-pub const PRESETS: [(&str, &str); 5] = [
+pub const PRESETS: [(&str, &str); 6] = [
     (
         "Standard",
         "Hex words: a byte of instruction code, then a byte of operand. 256 cells",
@@ -30,6 +30,11 @@ pub const PRESETS: [(&str, &str); 5] = [
         "MARIE",
         "16-bit hex words: one digit of instruction, three of address. 4096 cells and \
          two's complement numbers",
+    ),
+    (
+        "CARDIAC",
+        "Bell Labs' cardboard computer: a sign and three decimal digits per cell, 100 cells, a \
+         four-digit accumulator, and cell 00 fixed at 001, the loader",
     ),
 ];
 
@@ -248,7 +253,7 @@ impl AppState {
 
     pub fn open_program(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Program", &["json", "ram", "asm"])
+            .add_filter("Program", &["json", "ram", "asm", "mas"])
             .pick_file()
         else {
             return;
@@ -279,6 +284,7 @@ impl AppState {
             .add_filter("Program", &["json"])
             .add_filter("Johnny program", &["ram"])
             .add_filter("Assembly", &["asm"])
+            .add_filter("MARIE assembly", &["mas"])
             .set_file_name(format!("{name}.json"))
             .save_file()
         else {
@@ -415,5 +421,20 @@ mod tests {
         state.pick(0);
 
         assert_eq!(state.machine.memory.read(0), 0x0a0b);
+    }
+
+    #[test]
+    fn a_mas_file_switches_to_the_marie_machine() {
+        let path = std::env::temp_dir().join("vnm-test-switch.mas");
+        std::fs::write(&path, "Input\nOutput\nHalt\n").unwrap();
+
+        let mut state = AppState::new();
+        let program = Program::load(&path, &state.machine.instruction_set).unwrap();
+        std::fs::remove_file(&path).unwrap();
+        state.load(program);
+
+        assert_eq!(PRESETS[state.preset].0, "MARIE");
+        assert_eq!(state.machine.instruction_set, InstructionSet::marie());
+        assert_eq!(state.machine.memory.data()[..3], [0x5000, 0x6000, 0x7000]);
     }
 }
