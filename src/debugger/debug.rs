@@ -70,18 +70,20 @@ impl Debug {
             return Err(None);
         }
 
-        let (Some(address), Some(value)) = (parse_value(arguments[1]), parse_value(arguments[2]))
+        let set = &state.machine.instruction_set;
+        let format = set.format;
+
+        // Hex and binary are words, as IN reads them, so 0x9005 is MARIE's Jump 005.
+        let (Some(address), Some(value)) =
+            (parse_value(arguments[1]), format.parse_input(arguments[2]))
         else {
             return Err(None);
         };
-
-        let set = &state.machine.instruction_set;
 
         if !(0..MEMORY_SIZE as i32).contains(&address) || !set.values().contains(&value) {
             return Err(None);
         }
 
-        let format = set.format;
         let cell = address.rem_euclid(format.cells().max(1) as i32);
 
         if format.fixed().is_some_and(|(fixed, _)| fixed == cell as usize) {
@@ -150,7 +152,7 @@ impl Debug {
             .push(("Available Commands:".to_string(), true));
         self.command_history.push((
             format!(
-                "SetMem <ADDRESS [0-{}], reduced modulo format cells> <VALUE DEC/HEX>",
+                "SetMem <ADDRESS [0-{}], reduced modulo format cells> <VALUE DEC, or WORD 0x/0b>",
                 MEMORY_SIZE - 1
             ),
             true,
@@ -211,8 +213,13 @@ mod tests {
         debug.send(&mut state, "SetMem 5 -1".to_string());
         debug.send(&mut state, "SetMem 6 32768".to_string());
 
+        debug.send(&mut state, "SetMem 7 0x9005".to_string());
+        debug.send(&mut state, "SetMem 8 0b1111111111111110".to_string());
+
         assert_eq!(state.machine.memory.read(5), 0xFFFF);
         assert_eq!(state.machine.memory.read(6), 0);
+        assert_eq!(state.machine.memory.read(7), 0x9005);
+        assert_eq!(state.machine.memory.read(8), 0xFFFE);
         assert!(crate::program::Program::from_machine("x".to_string(), &state.machine)
             .check()
             .is_ok());

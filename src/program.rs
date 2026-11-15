@@ -37,29 +37,27 @@ pub struct Program {
     pub instruction_set: Option<InstructionSet>,
 }
 
-fn validate_program(program: &Program, set: Option<&InstructionSet>) -> anyhow::Result<()> {
-    if let Some(set) = set {
-        set.check()?;
+fn validate_program(program: &Program, set: &InstructionSet) -> anyhow::Result<()> {
+    set.check()?;
 
-        let format = &set.format;
-        let cells = format.cells();
+    let format = &set.format;
+    let cells = format.cells();
 
+    anyhow::ensure!(
+        usize::from(program.entry_point) < cells,
+        "the program starts at {}, past the last cell, {}",
+        format.text(program.entry_point.into(), 1),
+        format.text(cells as i32 - 1, 1)
+    );
+
+    if format.data_encoding == DataEncoding::Lmc {
         anyhow::ensure!(
-            usize::from(program.entry_point) < cells,
-            "the program starts at {}, past the last cell, {}",
-            format.text(program.entry_point.into(), 1),
-            format.text(cells as i32 - 1, 1)
+            program.memory.len() <= cells
+                && program.memory.iter().all(|word| (-999..=999).contains(word)),
+            "an LMC program has at most {cells} cells, each between -999 and 999"
         );
 
-        if format.data_encoding == DataEncoding::Lmc {
-            anyhow::ensure!(
-                program.memory.len() <= cells
-                    && program.memory.iter().all(|word| (-999..=999).contains(word)),
-                "an LMC program has at most {cells} cells, each between -999 and 999"
-            );
-
-            return Ok(());
-        }
+        return Ok(());
     }
 
     anyhow::ensure!(
@@ -75,7 +73,7 @@ fn validate_program(program: &Program, set: Option<&InstructionSet>) -> anyhow::
 }
 
 fn validate_ram_program(program: &Program, set: &InstructionSet) -> anyhow::Result<()> {
-    validate_program(program, Some(set))?;
+    validate_program(program, set)?;
     anyhow::ensure!(
         program.memory.len() <= 1000,
         "a .ram file has at most 1000 cells"
@@ -217,13 +215,20 @@ impl Program {
         })
     }
 
-    // Whether the program fits the set it carries, the one it will run on.
+    // Whether the program fits the set it will run on: its own, else that of the machine it
+    // lands on.
+    pub fn check_on(&self, machine: &InstructionSet) -> anyhow::Result<()> {
+        validate_program(self, self.instruction_set.as_ref().unwrap_or(machine))
+    }
+
+    // A program without a set runs as Standard.
     pub fn check(&self) -> anyhow::Result<()> {
-        validate_program(self, self.instruction_set.as_ref())
+        self.check_on(&InstructionSet::default())
     }
 
     // Files ending in .ram are Johnny's words without a set, .asm are text in the mnemonics of
-    // `set`, .mas are MARIE's, everything else is JSON.
+    // `set`, .mas are MARIE's, everything else is JSON. `set` is the machine's it lands on, so a
+    // file without a set of its own is checked against it.
     pub fn load(path: &Path, set: &InstructionSet) -> anyhow::Result<Self> {
         let text = read_text(path)?;
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -244,11 +249,9 @@ impl Program {
         };
 
         if is_ram(path) {
-            validate_ram_program(&program, &InstructionSet::johnny())?;
-        } else if has_extension(path, "asm") {
-            validate_program(&program, Some(set))?;
+            validate_ram_program(&program, set)?;
         } else {
-            program.check()?;
+            program.check_on(set)?;
         }
 
         Ok(program)
@@ -293,7 +296,7 @@ impl Program {
             } else {
                 own
             };
-            validate_program(self, Some(set))?;
+            validate_program(self, set)?;
             let text = disassemble(&self.memory, self.entry_point, set);
 
             // Words or cells the format cannot hold would not load back.
@@ -505,7 +508,7 @@ mod tests {
 
         let save_error = program.save(&path).unwrap_err().to_string();
         fs::write(&path, "5\r\n-5\r\n").unwrap();
-        let load_error = Program::load(&path, &InstructionSet::default())
+        let load_error = Program::load(&path, &InstructionSet::johnny())
             .unwrap_err()
             .to_string();
         fs::remove_file(&path).unwrap();
