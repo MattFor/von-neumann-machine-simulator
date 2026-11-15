@@ -103,7 +103,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
         let button = ui
             .button("Set address bus")
             .on_hover_text(
-                "Put this address (in the machine's radix, or after 0x, 0b or 0d) on the address bus; \
+                "Put this address (in the machine's radix, or hex after 0x) on the address bus; \
                  ram->db and db->ram work on that cell",
             );
 

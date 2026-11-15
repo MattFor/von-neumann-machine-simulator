@@ -92,7 +92,8 @@ const SECTIONS: [(&str, &str); 9] = [
         "Open Program also reads .asm files: a program as text, one instruction per line in \
          the mnemonics of the instruction set that is loaded, like LOAD 1F. Mnemonics can be \
          in any case. Numbers are in the machine's radix, hex on the Standard machine and \
-         decimal on Johnny; 0x, 0b or 0d in front makes them hex, binary or decimal.\n\n\
+         decimal on Johnny; 0x in front makes a number hex. 0b and 0d make it binary or \
+         decimal where B and D are not digits of the machine, so 0B05 stays hex on MARIE.\n\n\
          Comments start with ;, # or / (MARIE's). A name with : or , after it at the start of \
          a line is a label, and can stand in for a number. Like in the Little Man Computer, a \
          line may also start with a label followed by the instruction. Instructions with a \
@@ -134,9 +135,10 @@ const SECTIONS: [(&str, &str); 9] = [
          how negative numbers are stored, what happens on an unknown code or after the last \
          cell, and whether plus and minus set flags. A format the registers cannot hold, or one \
          that leaves an instruction without its code, is not applied, and the tab says why.\n\n\
-         Open Program reads Johnny's .ram files and Open Set its .mc microcode files. Both \
-         switch to Johnny by themselves, also from Bonsai. To write a .ram file for Johnny, \
-         save the program under a name ending in .ram.",
+         Open Program reads Johnny's .ram files and Open Set its .mc microcode files. They hold \
+         no machine, so they open into the loaded one when it uses Johnny's format (Johnny, \
+         Bonsai or your own) and switch to Johnny otherwise. Any program in Johnny's format \
+         that starts at 0 can be saved as .ram.",
     ),
 ];
 
