@@ -1,148 +1,162 @@
 use super::{controls, gui_state::AppState};
-use crate::gui::data_bus_view;
-use egui::{Color32, Ui};
+use crate::gui::{control_unit_view, cpu_view, data_bus_view, memory_view, register_view};
+use egui::Ui;
 
-#[cfg(feature = "debug-mode")]
-use egui::{Frame, Stroke};
+// A card filling the rectangle it is given; debug builds outline it in red.
+fn panel(ui: &mut Ui, rect: egui::Rect, add: impl FnOnce(&mut Ui)) {
+    let stroke = if cfg!(feature = "debug-mode") {
+        egui::Stroke::new(1.0, egui::Color32::RED)
+    } else {
+        ui.visuals().window_stroke
+    };
 
-#[cfg(feature = "debug-mode")]
-fn debug_view(ui: &mut Ui, color: Color32, add: impl FnOnce(&mut Ui)) {
-    Frame::new()
-        .stroke(Stroke::new(1.0, color))
-        .inner_margin(4.0)
-        .show(ui, |ui| {
-            add(ui);
-        });
+    ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| {
+        // Contents that do not fit are cut off instead of running into the next card.
+        ui.shrink_clip_rect(rect);
+
+        egui::Frame::new()
+            .fill(ui.visuals().window_fill)
+            .stroke(stroke)
+            .corner_radius(8)
+            .inner_margin(10)
+            .show(ui, |ui| {
+                ui.set_min_size(ui.available_size());
+                add(ui);
+            });
+    });
 }
 
-#[cfg(not(feature = "debug-mode"))]
-fn debug_view(ui: &mut Ui, _color: Color32, add: impl FnOnce(&mut Ui)) {
-    add(ui);
+fn scrolling(ui: &mut Ui, rect: egui::Rect, id: &str, add: impl FnOnce(&mut Ui)) {
+    panel(ui, rect, |ui| {
+        egui::ScrollArea::vertical().id_salt(id).show(ui, add);
+    });
 }
 
 pub fn show(ui: &mut Ui, state: &mut AppState) {
     controls::show(ui, state);
 
-    ui.horizontal(|ui| {
-        ui.label("Views:");
+    let advanced = state.advanced;
 
-        for (shown, label, hint) in [
-            (
-                &mut state.show_memory,
-                "Memory",
-                "The memory cells: the program and its data",
-            ),
-            (
-                &mut state.show_registers,
-                "Registers",
-                "The registers and the instruction that comes next",
-            ),
-            (
-                &mut state.show_control_unit,
-                "Control unit",
-                "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
-            ),
-            (
-                &mut state.show_cpu,
-                "CPU",
-                "Program counter, accumulator and the arithmetic buttons",
-            ),
-            (
-                &mut state.show_console,
-                "Console",
-                "What the program prints, and the numbers it reads",
-            ),
-        ] {
-            ui.checkbox(shown, label).on_hover_text(hint);
-        }
-    });
+    if advanced {
+        ui.horizontal(|ui| {
+            ui.label("Views:");
 
-    ui.separator();
+            for (shown, label, hint) in [
+                (
+                    &mut state.show_memory,
+                    "Memory",
+                    "The memory cells: the program and its data",
+                ),
+                (
+                    &mut state.show_registers,
+                    "Registers",
+                    "The registers and the instruction that comes next",
+                ),
+                (
+                    &mut state.show_control_unit,
+                    "Control unit",
+                    "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
+                ),
+                (
+                    &mut state.show_cpu,
+                    "CPU",
+                    "Program counter, accumulator and the arithmetic buttons",
+                ),
+                (
+                    &mut state.show_console,
+                    "Console",
+                    "What the program prints, and the numbers it reads",
+                ),
+            ] {
+                ui.checkbox(shown, label).on_hover_text(hint);
+            }
+        });
+    }
 
-    let cpu_connections = ui.painter().add(egui::Shape::Noop);
-    let transfers = egui::Panel::bottom("data_bus_panel")
+    // The simple view is always the memory next to the registers.
+    let [memory, registers, control_unit, cpu] = if advanced {
+        [
+            state.show_memory,
+            state.show_registers,
+            state.show_control_unit,
+            state.show_cpu,
+        ]
+    } else {
+        [true, true, false, false]
+    };
+
+    ui.add_space(4.0);
+
+    egui::Panel::bottom("data_bus_panel")
         .exact_size(data_bus_view::HEIGHT)
         .frame(egui::Frame::NONE)
         .show_separator_line(false)
         .show(ui, |ui| {
-            data_bus_view::show(ui, &mut state.machine, state.show_memory, state.show_cpu)
-        })
-        .inner;
-    let mut accumulator = None;
+            data_bus_view::show(
+                ui,
+                &mut state.machine,
+                memory,
+                registers || control_unit || cpu,
+                advanced,
+            );
+        });
 
-    let panels = [
-        state.show_memory,
-        state.show_registers,
-        state.show_control_unit,
-        state.show_cpu,
-    ]
-    .iter()
-    .filter(|shown| **shown)
-    .count();
+    // The memory table needs the most room, the registers the least.
+    let weights = [
+        (memory, 1.4),
+        (registers, 0.8),
+        (control_unit, 1.0),
+        (cpu, 1.0),
+    ];
+    let shown = weights.iter().filter(|(shown, _)| *shown);
+    let gap = ui.spacing().item_spacing.x;
+    let gaps = gap * (shown.clone().count() as f32 - 1.0);
+    let total: f32 = shown.map(|(_, weight)| weight).sum();
 
-    let width = ui.available_width();
-    let panels_height = ui.available_height();
-
-    if panels > 0 {
-        ui.allocate_ui_with_layout(
-            egui::vec2(width, panels_height),
-            egui::Layout::top_down(egui::Align::Min),
-            |ui| {
-                ui.columns(panels, |columns| {
-                    let mut column = 0;
-
-                    if state.show_memory {
-                        debug_view(&mut columns[column], Color32::RED, |ui| {
-                            crate::gui::memory_view::show(ui, &mut state.machine);
-                        });
-                        column += 1;
-                    }
-
-                    if state.show_registers {
-                        debug_view(&mut columns[column], Color32::RED, |ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt("registers_scroll")
-                                .show(ui, |ui| {
-                                    crate::gui::register_view::show(ui, &state.machine);
-                                });
-                        });
-                        column += 1;
-                    }
-
-                    if state.show_control_unit {
-                        debug_view(&mut columns[column], Color32::RED, |ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt("control_unit_scroll")
-                                .show(ui, |ui| {
-                                    if let Some(message) =
-                                        crate::gui::control_unit_view::show(ui, &mut state.machine)
-                                    {
-                                        state.status_message = message;
-                                    }
-                                });
-                        });
-                        column += 1;
-                    }
-
-                    if state.show_cpu {
-                        debug_view(&mut columns[column], Color32::RED, |ui| {
-                            egui::ScrollArea::vertical()
-                                .id_salt("cpu_scroll")
-                                .show(ui, |ui| {
-                                    accumulator =
-                                        crate::gui::cpu_view::show(ui, &mut state.machine);
-                                });
-                        });
-                    }
-                });
-            },
+    let area = ui.available_rect_before_wrap();
+    let mut left = area.left();
+    let mut column = |index: usize| {
+        let width = (area.width() - gaps) * weights[index].1 / total;
+        let rect = egui::Rect::from_min_size(
+            egui::pos2(left, area.top()),
+            egui::vec2(width, area.height()),
         );
+
+        left += width + gap;
+        rect
+    };
+
+    if memory {
+        let rect = column(0);
+
+        panel(ui, rect, |ui| {
+            memory_view::show(ui, &mut state.machine, advanced);
+        });
     }
 
-    if state.show_cpu {
-        ui.painter().set(
-            cpu_connections,
-            data_bus_view::cpu_connections(transfers, accumulator),
-        );
+    if registers {
+        let rect = column(1);
+
+        scrolling(ui, rect, "registers_scroll", |ui| {
+            register_view::show(ui, &state.machine);
+        });
+    }
+
+    if control_unit {
+        let rect = column(2);
+
+        scrolling(ui, rect, "control_unit_scroll", |ui| {
+            if let Some(message) = control_unit_view::show(ui, &mut state.machine) {
+                state.status_message = message;
+            }
+        });
+    }
+
+    if cpu {
+        let rect = column(3);
+
+        scrolling(ui, rect, "cpu_scroll", |ui| {
+            cpu_view::show(ui, &mut state.machine);
+        });
     }
 }

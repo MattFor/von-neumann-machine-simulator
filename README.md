@@ -18,6 +18,11 @@ cargo test
 Click **Example** to load a small countdown program, then **Run** or **Step**.
 The **Guide** tab explains everything in the app, and every button has a tooltip.
 
+The app starts in a simple view: memory, registers and the data bus. **Advanced**
+(top right) adds the control unit, the buttons to drive the machine by hand and the
+view switches. **Johnny mode** next to it makes the machine work like the
+[Johnny simulator](https://github.com/Laubersheini/johnny).
+
 | Key      | Action             |
 | -------- | ------------------ |
 | `F5`     | Run / pause        |
@@ -36,16 +41,22 @@ The **Guide** tab explains everything in the app, and every button has a tooltip
 - **Registers**: the ones the last step changed are highlighted.
 - **Console**: `OUT` prints here. When the program stops on `IN`, type one or more
   numbers and press Enter; a running program carries on by itself.
-- **Control unit** (off by default, under Views): shows the micro steps of the
+- **Control unit** (advanced view): shows the micro steps of the
   current instruction. **Micro Step** does one of them at a time. Every micro step
   is also a button, so the machine can be driven by hand, and **Record** turns the
   buttons you press into a new instruction.
 - **Instruction Set**: rename instructions, change their codes or add your own
   aliases, and save the set as JSON. An instruction set to `Custom` has its micro
-  steps edited right there. **Johnny** and **Bonsai** load the instruction sets of
-  the [Johnny simulator](https://github.com/Laubersheini/johnny).
+  steps edited right there.
+- **Johnny mode**: decimal words (two digits of instruction code, three of operand),
+  1000 cells and Johnny's instructions. Each mode keeps its own program, so switching
+  loses nothing. **Open Program** reads Johnny's `.ram` files and **Open Set** its
+  `.mc` microcode files, both switch to Johnny mode by themselves. Saving a program
+  under a name ending in `.ram` writes a Johnny file. **Bonsai** on the Instruction
+  Set tab loads Johnny's minimal set.
 
-Speed, visible panels, theme and window size are remembered between launches.
+Speed, visible panels, the view, the mode, theme and window size are remembered
+between launches.
 
 ## Instructions
 

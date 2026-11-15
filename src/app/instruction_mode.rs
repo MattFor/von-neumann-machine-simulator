@@ -9,7 +9,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.horizontal(|ui| {
         if ui
             .button("Open Set")
-            .on_hover_text("Load an instruction set file")
+            .on_hover_text("Load an instruction set file, or a Johnny .mc microcode file")
             .clicked()
         {
             state.open_instruction_set();
@@ -41,28 +41,24 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         let presets: [(_, _, fn() -> InstructionSet); 3] = [
             (
                 "Restore Default",
-                "Back to the built-in instruction set",
+                "Standard mode with the built-in instruction set",
                 InstructionSet::default,
             ),
             (
                 "Johnny",
-                "The names and codes of the Johnny simulator: TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL, HLT",
+                "Johnny mode with the instructions of the Johnny simulator: TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL, HLT",
                 InstructionSet::johnny,
             ),
             (
                 "Bonsai",
-                "Johnny's minimal set: INC, DEC, JMP, TST, HLT",
+                "Johnny mode with its minimal set: INC, DEC, JMP, TST, HLT",
                 InstructionSet::bonsai,
             ),
         ];
 
         for (label, hint, preset) in presets {
             if ui.button(label).on_hover_text(hint).clicked() {
-                state.machine.instruction_set = preset();
-                state.status_message = format!(
-                    "Loaded the {} instruction set",
-                    state.machine.instruction_set.name
-                );
+                state.use_set(preset());
             }
         }
     });

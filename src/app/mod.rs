@@ -12,8 +12,9 @@ use gui_state::{AppState, MAX_SPEED, MIN_SPEED, UiMode};
 
 const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
 
-// Remembered between launches: speed, then the memory, registers, CPU, console and control unit toggles.
-type Settings = (usize, bool, bool, bool, bool, bool);
+// Remembered between launches: speed, the memory, registers, CPU, console and control unit
+// toggles, then the advanced view and Johnny mode.
+type Settings = (usize, bool, bool, bool, bool, bool, bool, bool);
 
 pub struct VnmApp {
     pub state: AppState,
@@ -23,7 +24,9 @@ impl VnmApp {
     pub fn new(cc: &eframe::CreationContext<'_>) -> Self {
         let mut state = AppState::new();
 
-        if let Some((speed, memory, registers, cpu, console, control_unit)) = cc
+        crate::gui::theme::apply(&cc.egui_ctx);
+
+        if let Some((speed, memory, registers, cpu, console, control_unit, advanced, johnny)) = cc
             .storage
             .and_then(|storage| eframe::get_value::<Settings>(storage, eframe::APP_KEY))
         {
@@ -33,6 +36,12 @@ impl VnmApp {
             state.show_cpu = cpu;
             state.show_console = console;
             state.show_control_unit = control_unit;
+            state.advanced = advanced;
+
+            if johnny {
+                state.toggle_johnny();
+                state.status_message.clear();
+            }
         }
 
         Self { state }
@@ -49,6 +58,8 @@ impl eframe::App for VnmApp {
             state.show_cpu,
             state.show_console,
             state.show_control_unit,
+            state.advanced,
+            state.johnny(),
         );
 
         eframe::set_value(storage, eframe::APP_KEY, &settings);
@@ -57,8 +68,6 @@ impl eframe::App for VnmApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         egui::Panel::top("top_menu").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.label("View:");
-
                 for (mode, label) in [
                     (UiMode::Machine, "Machine"),
                     (UiMode::Instructions, "Instruction Set"),
@@ -82,13 +91,45 @@ impl eframe::App for VnmApp {
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::widgets::global_theme_preference_switch(ui);
+
+                    // Framed, so that they read as switches and not as text.
+                    if ui
+                        .add(egui::Button::new("Johnny mode").selected(self.state.johnny()))
+                        .on_hover_text(
+                            "Work like the Johnny simulator: decimal words (two digits of \
+                             instruction, three of address), 1000 cells and Johnny's instructions. \
+                             Opens Johnny .ram and .mc files. Each mode keeps its own program",
+                        )
+                        .clicked()
+                    {
+                        self.state.toggle_johnny();
+                    }
+
+                    if ui
+                        .add(egui::Button::new("Advanced").selected(self.state.advanced))
+                        .on_hover_text(
+                            "Show everything: the control unit with its micro steps, the buttons \
+                             to drive the machine by hand and the view switches",
+                        )
+                        .clicked()
+                    {
+                        self.state.advanced = !self.state.advanced;
+                    }
                 });
             });
         });
 
         egui::Panel::bottom("status_bar").show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.strong(self.state.status());
+                let status = self.state.status();
+                let color = match status {
+                    "Running" => ui.visuals().selection.bg_fill,
+                    "Halted" => ui.visuals().error_fg_color,
+                    "Waiting for input" => ui.visuals().warn_fg_color,
+                    _ => ui.visuals().text_color(),
+                };
+
+                ui.colored_label(color, egui::RichText::new(status).strong());
                 ui.separator();
 
                 let message = &self.state.status_message;
@@ -110,7 +151,7 @@ impl eframe::App for VnmApp {
             });
         });
 
-        if self.state.mode == UiMode::Machine && self.state.show_console {
+        if self.state.mode == UiMode::Machine && (self.state.show_console || !self.state.advanced) {
             egui::Panel::bottom("console_panel")
                 .resizable(true)
                 .default_size(CONSOLE_PANEL_HEIGHT)
@@ -152,8 +193,12 @@ impl eframe::App for VnmApp {
 
             if self.state.machine.run_steps(steps) {
                 self.state.running = false;
-                self.state.status_message =
-                    format!("Breakpoint at {:04X}", self.state.machine.cpu.pc);
+                let machine = &self.state.machine;
+
+                self.state.status_message = format!(
+                    "Breakpoint at {}",
+                    machine.instruction_set.digits(machine.cpu.pc as i32, 4, 3)
+                );
             }
 
             self.state.time_accumulator -= steps as f64 * secs_per_instruction;

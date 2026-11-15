@@ -10,7 +10,13 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
         .show(ui, |ui| {
             ui.label("Reg");
             ui.label("Dec");
-            ui.label("Hex");
+            // Hex means nothing to a Johnny program.
+            let hex = !machine.instruction_set.johnny;
+
+            if hex {
+                ui.label("Hex");
+            }
+
             ui.end_row();
 
             let (cpu, old) = (&machine.cpu, &machine.previous);
@@ -57,7 +63,10 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
 
                 ui.monospace(name).on_hover_text(description);
                 ui.label(text(format!("{value}")));
-                ui.label(text(format!("{:04X}", value as u16)));
+                if hex {
+                    ui.label(text(format!("{:04X}", value as u16)));
+                }
+
                 ui.end_row();
             }
         });

@@ -41,14 +41,19 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
                         .on_hover_text("What the control unit does, in order, after the fetch");
                     ui.end_row();
 
+                    let johnny = machine.instruction_set.johnny;
+                    let max_code = machine.instruction_set.limits().0;
+
                     for (index, definition) in
                         machine.instruction_set.definitions.iter_mut().enumerate()
                     {
-                        ui.add(
+                        ui.add(if johnny {
+                            egui::DragValue::new(&mut definition.code).range(0..=max_code)
+                        } else {
                             egui::DragValue::new(&mut definition.code)
-                                .range(0..=255)
-                                .hexadecimal(2, false, true),
-                        );
+                                .range(0..=max_code)
+                                .hexadecimal(2, false, true)
+                        });
 
                         ui.add(
                             egui::TextEdit::singleline(&mut definition.mnemonic)

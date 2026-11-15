@@ -1,12 +1,10 @@
 mod executor;
-mod instruction_decoder;
 mod instructions;
 mod memory;
 mod registers;
 
 use std::collections::{HashSet, VecDeque};
 
-pub use instruction_decoder::encode;
 pub use instructions::{Definition, FETCH, InstructionSet, MicroOp, Opcode};
 pub use memory::MEMORY_SIZE;
 pub use registers::{ACC_MAX, ACC_MIN};
@@ -111,7 +109,8 @@ impl Machine {
     // The micro steps the control unit is working through.
     pub fn steps(&self) -> &[MicroOp] {
         if self.executing {
-            self.instruction_set.steps((self.cpu.ir >> 8) as i32)
+            self.instruction_set
+                .steps(self.instruction_set.split(self.cpu.ir as i32).0)
         } else {
             &FETCH
         }
@@ -197,11 +196,18 @@ impl Machine {
     }
 
     pub fn describe(&self, raw: i32) -> String {
+        let set = &self.instruction_set;
+        let (code, operand) = set.split(raw);
+        let word = if set.johnny {
+            format!("{code:02}.{operand:03}")
+        } else {
+            format!("{:04X}", raw as u16)
+        };
+
         format!(
-            "{:04X}  {} {:02X}",
-            raw as u16,
-            self.instruction_set.mnemonic((raw >> 8) & 0xff),
-            raw & 0xff
+            "{word}  {} {}",
+            set.mnemonic(code),
+            set.digits(operand, 2, 3)
         )
     }
 }
@@ -512,6 +518,48 @@ mod tests {
         let set: InstructionSet = serde_json::from_str(old).unwrap();
 
         assert_eq!(set.steps(1), Opcode::Load.micro());
+    }
+
+    #[test]
+    fn johnny_program_file_runs_with_decimal_words() {
+        let program = Program::from_ram("sum", include_str!("../../assets/sum.ram")).unwrap();
+
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::johnny();
+        program.apply(&mut machine);
+        machine.run_steps(100);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(12), 12);
+        assert_eq!(machine.describe(4012), "04.012  SAVE 012");
+        assert!(
+            program
+                .to_ram()
+                .starts_with("1010\r\n2011\r\n4012\r\n10000\r\n")
+        );
+        assert_eq!(program.to_ram().lines().count(), 1000);
+    }
+
+    #[test]
+    fn johnny_microcode_file_becomes_an_instruction_set() {
+        let mut lines = vec!["0".to_string(); 200];
+
+        for (line, id) in [(0, 8), (1, 2), (2, 3), (3, 5)] {
+            lines[line] = id.to_string();
+        }
+
+        for (line, id) in [(10, 4), (11, 2), (12, 18), (13, 9), (14, 7)] {
+            lines[line] = id.to_string();
+        }
+
+        lines.extend(["FETCH".to_string(), "TAKE".to_string()]);
+
+        let set = InstructionSet::from_mc("mine", &lines.join("\r\n")).unwrap();
+
+        assert!(set.johnny);
+        assert_eq!(set.mnemonic(1), "TAKE");
+        assert_eq!(set.steps(1), Opcode::Load.micro());
+        assert!(set.find(2).is_none());
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

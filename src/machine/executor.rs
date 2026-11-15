@@ -1,7 +1,7 @@
 use super::{Machine, instructions::MicroOp};
 
 pub fn execute(machine: &mut Machine, op: MicroOp) {
-    let operand = machine.cpu.ir & 0xff;
+    let operand = machine.instruction_set.split(machine.cpu.ir as i32).1 as u16;
     let (acc, mbr) = (machine.cpu.acc, machine.cpu.mbr);
 
     match op {

@@ -56,7 +56,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     } else {
         machine.memory.read(machine.cpu.pc as usize)
     };
-    let code = (raw >> 8) & 0xff;
+    let code = machine.instruction_set.split(raw).0;
 
     for (title, steps, active) in [
         ("Fetch".to_string(), &FETCH[..], !machine.executing),
@@ -124,7 +124,10 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
                 Some(micro) => {
                     let code = machine.instruction_set.free_code();
 
-                    message = Some(format!("Recorded {name} as instruction {code:02X}"));
+                    message = Some(format!(
+                        "Recorded {name} as instruction {}",
+                        machine.instruction_set.digits(code, 2, 2)
+                    ));
                     machine.instruction_set.definitions.push(Definition {
                         code,
                         mnemonic: name.clone(),
