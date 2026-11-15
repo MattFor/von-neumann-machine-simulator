@@ -17,7 +17,7 @@ pub fn is_ram(path: &Path) -> bool {
 }
 
 // The first mistake is enough for the status bar.
-fn assembled(text: &str, set: &InstructionSet) -> anyhow::Result<Vec<i32>> {
+fn assembled(text: &str, set: &InstructionSet) -> anyhow::Result<(Vec<i32>, u16)> {
     assemble(text, set).map_err(|errors| match errors.len() {
         1 => anyhow::anyhow!("{}", errors[0]),
         count => anyhow::anyhow!("{}, and {} more", errors[0], count - 1),
@@ -148,10 +148,12 @@ impl Program {
         let program: Self = if is_ram(path) {
             Self::from_ram(&name, &text)?
         } else if has_extension(path, "asm") {
+            let (memory, entry_point) = assembled(&text, set)?;
+
             Self {
                 name: name.to_string(),
-                entry_point: 0,
-                memory: assembled(&text, set)?,
+                entry_point,
+                memory,
                 instruction_set: None,
             }
         } else {
@@ -200,10 +202,19 @@ impl Program {
                 .instruction_set
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?;
-            let text = disassemble(&self.memory, set);
-
+            let text = disassemble(&self.memory, self.entry_point, set);
             // Words or cells the format cannot hold would not load back.
-            assembled(&text, set)?;
+            let (memory, entry_point) = assembled(&text, set)?;
+            let length = self
+                .memory
+                .iter()
+                .rposition(|word| *word != 0)
+                .map_or(0, |index| index + 1);
+
+            anyhow::ensure!(
+                (&memory[..], entry_point) == (&self.memory[..length], self.entry_point),
+                "this program would not read back the same from an .asm file"
+            );
 
             text
         } else {
@@ -375,6 +386,7 @@ mod tests {
         Program::from_ram("sum", include_str!("../assets/sum.ram"))
             .unwrap()
             .apply(&mut machine);
+        machine.entry_point = 2;
 
         let saved = Program::from_machine("sum".to_string(), &machine);
         saved.save(&path).unwrap();
@@ -383,7 +395,9 @@ mod tests {
         fs::remove_file(&path).unwrap();
 
         assert!(text.starts_with("TAKE 10\nADD 11\nSAVE 12\nHLT 0\n"));
+        assert!(text.ends_with("NOP 7\nEND 2\n"));
         assert_eq!(program.memory, saved.memory);
+        assert_eq!(program.entry_point, 2);
         assert!(program.instruction_set.is_none());
     }
 

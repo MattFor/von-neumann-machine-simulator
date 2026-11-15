@@ -95,7 +95,7 @@ that set. Files without it keep the set that is currently loaded.
 Files ending in `.asm` are programs as text, in the mnemonics of the loaded set:
 
 ```asm
-start:  LOAD count   ; comments start with ;, # or //
+start:  LOAD count   ; comments start with ;, # or MARIE's /
         OUT
         DEC count
         JZ end
@@ -104,12 +104,21 @@ end:    HALT
 count:  DAT 5
 ```
 
-Mnemonics can be in any case. Numbers are in the set's radix unless `0x`, `0b` or
-`0d` says otherwise, and a label can stand in for one. A label ends in `:` or
-MARIE's `,`, or is LMC's first word that is not a mnemonic. `DAT n` (`DAT` alone is
-0) writes a number, as do MARIE's `DEC n` and `HEX n` where no instruction has that
-name, and `ORG n` carries on at address `n`. Saving under `.asm` writes this form;
-words that are no instruction come out as `DAT`. An `.asm` file starts at address 0.
+- Mnemonics can be in any case; two that differ only in case can't be used.
+  Instructions with a fixed operand, like LMC's `INP` and `OUT`, take none; MARIE's
+  `Skipcond` takes its condition, as in `Skipcond 400`.
+- Numbers are in the set's radix unless `0x`, `0b` or `0d` says otherwise, and a
+  label can stand in for one. A label ends in `:` or MARIE's `,`, or is LMC's first
+  word that is not a mnemonic (a directive's name counts as a label there).
+- `DAT n` (`DAT` alone is 0) writes a number, as do MARIE's `DEC n` and `HEX n`. On
+  MARIE, `DEC -1` is stored as `FFFF`. An instruction of the same name wins over
+  any directive, like Johnny's `DEC`.
+- `ORG n` carries on at address `n`; going back over a filled cell is an error.
+- `END` stops reading, like in MARIE. `END n` or `END label` also says where the
+  program starts; without it, it starts at its first instruction or number.
+
+Saving under `.asm` writes this form: words that are no instruction come out as
+`DAT`, and a start other than 0 as `END n`.
 
 ## Building
 

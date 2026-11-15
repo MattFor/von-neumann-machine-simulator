@@ -90,13 +90,19 @@ const SECTIONS: [(&str, &str); 10] = [
          the mnemonics of the instruction set that is loaded, like LOAD 1F. Mnemonics can be \
          in any case. Numbers are in the machine's radix, hex in standard mode and decimal in \
          Johnny mode; 0x, 0b or 0d in front makes them hex, binary or decimal.\n\n\
-         Comments start with ;, # or //. A name with : or , after it at the start of a line \
-         is a label, and can stand in for a number. Like in the Little Man Computer, a line \
-         may also start with a label followed by the instruction. DAT 5 puts the number 5 in \
-         a cell; DEC 5 and HEX 5 do it in decimal or hex where no instruction has that name. \
-         ORG 40 carries on at address 40.\n\n\
+         Comments start with ;, # or / (MARIE's). A name with : or , after it at the start of \
+         a line is a label, and can stand in for a number. Like in the Little Man Computer, a \
+         line may also start with a label followed by the instruction. Instructions with a \
+         fixed operand, like LMC's INP and OUT, take none; MARIE's Skipcond takes its \
+         condition, as in Skipcond 400. Two mnemonics that differ only in case can't be used.\n\n\
+         DAT 5 puts the number 5 in a cell, and DEC 5 and HEX 5 do it in decimal or hex. On \
+         MARIE, DEC -1 is stored as FFFF. An instruction of the same name wins over any of \
+         these, like Johnny's DEC. ORG 40 carries on at address 40; going back over a filled \
+         cell is a mistake. END stops reading, like in MARIE, and END 40 or END start also \
+         says where the program starts. Without it, it starts at the first instruction or \
+         number.\n\n\
          Save a program under a name ending in .asm to write it as text. Cells that hold no \
-         instruction come out as DAT. The program starts at address 0.",
+         instruction come out as DAT, and a start other than 0 as END.",
     ),
     (
         "Johnny mode",
