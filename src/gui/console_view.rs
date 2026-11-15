@@ -21,13 +21,23 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
             .on_hover_text("Clear the console output")
             .clicked()
         {
-            machine.output.clear();
+            machine.clear_output();
         }
 
         if machine.waiting {
             ui.colored_label(ui.visuals().warn_fg_color, "waiting for input");
         }
     });
+
+    // Sticking to the bottom lands a frame late, so grown output gets one more frame, idle or not.
+    let length = egui::Id::unique("console_length");
+    let grew = ui.data_mut(|data| {
+        std::mem::replace(data.get_temp_mut_or(length, 0), machine.output.len())
+    }) != machine.output.len();
+
+    if grew {
+        ui.ctx().request_repaint();
+    }
 
     let output_height = (ui.available_height() - CONSOLE_HEADER_AND_INPUT_HEIGHT).max(0.0);
 
@@ -95,5 +105,34 @@ mod tests {
         assert_eq!(parse(&Format::marie(), "0xFFFF 12 -3"), Some(vec![-1, 12, -3]));
         assert_eq!(parse(&Format::default(), "0xFFFF"), Some(vec![0xffff]));
         assert_eq!(parse(&Format::marie(), "1 x"), None);
+    }
+
+    // A fast run that prints and halts left the console a frame short of its last lines.
+    #[test]
+    fn new_output_gets_a_frame_to_scroll_to_it() {
+        let ctx = egui::Context::default();
+        let mut machine = Machine::new();
+        // A second apart, so that egui's own animations end.
+        let frame = |machine: &mut Machine| {
+            let input = egui::RawInput {
+                time: Some(ctx.input(|input| input.time) + 1.0),
+                ..Default::default()
+            };
+            let mut output = ctx.run_ui(input, |ui| show(ui, machine));
+            output.textures_delta.clear();
+
+            output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+        };
+
+        for _ in 0..3 {
+            frame(&mut machine);
+        }
+
+        machine.print("1\n");
+
+        let delays = [0; 4].map(|_| frame(&mut machine));
+
+        assert_eq!(delays[0], std::time::Duration::ZERO);
+        assert_eq!(delays[3], std::time::Duration::MAX);
     }
 }

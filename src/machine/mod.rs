@@ -211,11 +211,21 @@ impl Machine {
         self.cpu = undo.cpu;
         self.previous = undo.previous;
         self.halted = undo.halted;
-        self.waiting = undo.waiting;
+        // With input sent since, IN no longer waits; Run would skip a machine that did.
+        self.waiting = undo.waiting && self.input.is_empty();
         self.executing = undo.executing;
         self.mc = undo.mc;
 
         true
+    }
+
+    // Cleared by hand, the console stays clear through Back, past the limit's cuts too.
+    pub fn clear_output(&mut self) {
+        self.output.clear();
+
+        for undo in &mut self.history {
+            undo.changes.retain(|change| !matches!(change, Change::Output(_)));
+        }
     }
 
     pub(super) fn pop_input(&mut self) -> Option<i32> {
@@ -1548,6 +1558,37 @@ mod tests {
         }
 
         assert_eq!(machine.output, output);
+    }
+
+    #[test]
+    fn back_brings_back_no_output_cleared_by_hand() {
+        let mut machine = machine_with(&[word(10, 0), word(7, 0)]);
+
+        machine.run_steps(OUTPUT_LIMIT + 100);
+        machine.clear_output();
+
+        while machine.back() {}
+
+        assert_eq!(machine.output, "");
+    }
+
+    // A step by hand while IN waited, then input sent: back there, the run reads the input.
+    #[test]
+    fn back_to_a_wait_with_input_sent_since_does_not_wait() {
+        let mut machine = machine_with(&[word(9, 0)]);
+
+        machine.step();
+        machine.manual(MicroOp::AccInc);
+        machine.push_input(5);
+        machine.step();
+        machine.back();
+        machine.back();
+
+        assert!(!machine.waiting && machine.input == [5]);
+
+        machine.run_steps(1);
+
+        assert_eq!(machine.cpu.acc, 5);
     }
 
     #[test]
