@@ -77,7 +77,8 @@ flag, and `JC` and `JZ` jump on them; nothing else changes the flags.
 Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
 **Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
 files, both switch to Johnny by themselves. Saving a program under a name ending in
-`.ram` writes a Johnny file.
+`.ram` writes a Johnny file. It holds no set or entry point, so only a program in Johnny's
+own instructions that starts at 0 is saved that way; Bonsai programs go to `.json` or `.asm`.
 
 Once the set or its format matches none of the presets, the picker says **Custom**.
 Picking the machine again gives it its own set back and keeps the memory.

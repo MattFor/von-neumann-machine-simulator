@@ -241,13 +241,27 @@ impl Program {
     }
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
+        // A program without a set runs as Standard, so it is saved as one.
+        let standard = InstructionSet::default();
+        let own = self.instruction_set.as_ref().unwrap_or(&standard);
+
         let text = if is_ram(path) {
             // Johnny reads decimal words, so another format would come back as another program.
             anyhow::ensure!(
-                self.instruction_set
-                    .as_ref()
-                    .is_none_or(|set| set.format.johnny_compatible()),
+                own.format.johnny_compatible(),
                 "a .ram file holds Johnny's words: radix 10, 2 code digits and 3 operand digits"
+            );
+
+            // No set travels in a .ram file, so Bonsai or an edited set would load back as Johnny.
+            // Refused rather than documented, since Johnny's own Bonsai saves could not be checked.
+            anyhow::ensure!(
+                own.definitions == InstructionSet::johnny().definitions,
+                "a .ram file loads with Johnny's instructions, so save {} as .json or .asm",
+                own.name
+            );
+            anyhow::ensure!(
+                self.entry_point == 0,
+                "a .ram file has no entry point, so the program must start at 0"
             );
 
             // .ram files are always loaded as Johnny programs, regardless of their embedded set.
@@ -259,17 +273,13 @@ impl Program {
             let set = if has_extension(path, "mas") {
                 // .mas files always load as MARIE programs.
                 anyhow::ensure!(
-                    self.instruction_set
-                        .as_ref()
-                        .is_none_or(|set| set.format == marie.format),
+                    own.format == marie.format,
                     "a .mas file holds MARIE's words: 16-bit hex, 1 code digit and 3 operand digits"
                 );
 
                 &marie
             } else {
-                self.instruction_set
-                    .as_ref()
-                    .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?
+                own
             };
             validate_program(self, Some(set))?;
             let text = disassemble(&self.memory, self.entry_point, set);
@@ -394,6 +404,38 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("radix 10"));
+    }
+
+    #[test]
+    fn a_bonsai_program_is_not_saved_as_ram() {
+        let path = std::env::temp_dir().join("vnm-test-bonsai.ram");
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::bonsai();
+
+        let error = Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap_err();
+        let written = fs::remove_file(&path).is_ok();
+
+        assert!(error.to_string().contains("save Bonsai as .json or .asm"), "{error}");
+        assert!(!written);
+    }
+
+    #[test]
+    fn a_ram_file_cannot_start_past_cell_0() {
+        let path = std::env::temp_dir().join("vnm-test-entry.ram");
+        let program = Program {
+            name: "x".to_string(),
+            entry_point: 2,
+            memory: vec![1010],
+            instruction_set: Some(InstructionSet::johnny()),
+        };
+
+        let error = program.save(&path).unwrap_err();
+        let written = fs::remove_file(&path).is_ok();
+
+        assert!(error.to_string().contains("must start at 0"), "{error}");
+        assert!(!written);
     }
 
     #[test]

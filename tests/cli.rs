@@ -230,6 +230,52 @@ fn a_closed_pipe_exits_with_141_without_a_panic() {
     assert_eq!(traced.code(), Some(141));
 }
 
+// Help and errors fit in the pipe, so its reader has to be gone before they are printed.
+#[test]
+fn help_and_errors_exit_with_141_on_a_closed_pipe() {
+    let closed = || {
+        let (reader, writer) = std::io::pipe().unwrap();
+        drop(reader);
+
+        writer
+    };
+
+    let help = binary().arg("--help").stdout(closed()).status().unwrap();
+    let error = binary().arg("frob").stderr(closed()).status().unwrap();
+
+    assert_eq!((help.code(), error.code()), (Some(141), Some(141)));
+}
+
+// As `run` does, convert reads a JSON program without a set as a Standard one.
+#[test]
+fn a_json_program_without_a_set_converts_as_standard() {
+    let [json, ram, mas, asm] =
+        ["json", "ram", "mas", "asm"].map(|extension| temp(&format!("setless.{extension}")));
+    fs::write(
+        &json,
+        r#"{"name":"countdown","entry_point":0,"memory":[266,2560,3082,266,2054,1793,65280,0,0,0,5]}"#,
+    )
+    .unwrap();
+
+    let refused = [&ram, &mas].map(|out| convert(&[&json, out]));
+    let made = convert(&[&json, &asm]);
+    let runs = [run(&[&json]).0, run(&[&asm, "--machine", "standard"]).0];
+
+    for path in [&json, &asm] {
+        fs::remove_file(path).unwrap();
+    }
+
+    let messages = ["radix 10", "MARIE's words"];
+
+    for ((stdout, stderr, code), message) in refused.into_iter().zip(messages) {
+        assert_eq!((stdout.as_str(), code), ("", 1), "{stderr}");
+        assert!(stderr.contains(message), "{stderr}");
+    }
+
+    assert_eq!(made.2, 0, "{}", made.1);
+    assert_eq!(runs, ["5\n4\n3\n2\n1\n"; 2]);
+}
+
 #[test]
 fn convert_moves_a_program_between_formats() {
     let (asm, json, ram) = (temp("sum.asm"), temp("sum.json"), temp("sum.ram"));

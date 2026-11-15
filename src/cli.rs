@@ -45,7 +45,7 @@ struct Options {
 // The exit code of a run from the command line.
 pub fn main(args: &[String]) -> i32 {
     if args.iter().any(|arg| arg == "-h" || arg == "--help") {
-        print!("{HELP}");
+        print(io::stdout(), HELP.trim_end());
 
         return 0;
     }
@@ -62,7 +62,7 @@ pub fn main(args: &[String]) -> i32 {
         Ok(code) => code,
 
         Err(error) => {
-            eprintln!("error: {error:#}\nsee --help");
+            print(io::stderr(), format_args!("error: {error:#}\nsee --help"));
 
             1
         }

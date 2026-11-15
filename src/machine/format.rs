@@ -212,7 +212,14 @@ impl Format {
             _ => return raw.parse().ok(),
         };
 
-        u16::from_str_radix(&raw[2..], radix)
+        let digits = &raw[2..];
+
+        // from_str_radix would take the sign in 0x+5.
+        if digits.starts_with('+') {
+            return None;
+        }
+
+        u16::from_str_radix(digits, radix)
             .ok()
             .map(|word| self.value(word.into()))
     }
@@ -296,6 +303,24 @@ impl Format {
             "the accumulator minimum is above its maximum"
         );
 
+        if let Some((cell, word)) = self.fixed_cell {
+            let words = match self.data_encoding {
+                DataEncoding::Lmc => -999..=999,
+                DataEncoding::Unsigned | DataEncoding::TwosComplement => 0..=0xffff,
+            };
+
+            anyhow::ensure!(
+                u128::from(cell) < cells,
+                "the fixed cell {cell} is not one of the {cells} cells"
+            );
+            anyhow::ensure!(
+                words.contains(&word),
+                "the fixed cell's word {word} is not between {} and {}",
+                words.start(),
+                words.end()
+            );
+        }
+
         Ok(())
     }
 }
@@ -348,7 +373,7 @@ mod tests {
         assert_eq!(Format::default().parse_input("0xFFFF"), Some(0xffff));
         assert_eq!(Format::lmc().parse_input("0x10"), Some(16));
 
-        for raw in ["0x10000", "0x-1", "0x", "0b2", "x", ""] {
+        for raw in ["0x10000", "0x-1", "0x+5", "0b+1", "0x", "0b2", "x", ""] {
             assert_eq!(marie.parse_input(raw), None, "{raw}");
         }
     }
@@ -357,6 +382,7 @@ mod tests {
     fn formats_the_registers_cannot_hold_are_refused() {
         assert!(Format::default().check().is_ok());
         assert!(Format::johnny().check().is_ok());
+        assert!(Format::cardiac().check().is_ok());
 
         for format in [
             Format {
@@ -386,6 +412,18 @@ mod tests {
             Format {
                 acc_min: 1,
                 acc_max: 0,
+                ..Format::default()
+            },
+            Format {
+                fixed_cell: Some((100, 1)),
+                ..Format::cardiac()
+            },
+            Format {
+                fixed_cell: Some((0, 1000)),
+                ..Format::cardiac()
+            },
+            Format {
+                fixed_cell: Some((0, -1)),
                 ..Format::default()
             },
         ] {
