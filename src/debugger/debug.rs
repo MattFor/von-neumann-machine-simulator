@@ -75,18 +75,21 @@ impl Debug {
             return Err(None);
         };
 
-        if !(0..MEMORY_SIZE as i32).contains(&address) {
+        let set = &state.machine.instruction_set;
+
+        if !(0..MEMORY_SIZE as i32).contains(&address) || !set.values().contains(&value) {
             return Err(None);
         }
 
-        let format = state.machine.instruction_set.format;
+        let format = set.format;
         let cell = address.rem_euclid(format.cells().max(1) as i32);
 
         if format.fixed().is_some_and(|(fixed, _)| fixed == cell as usize) {
             return Err(Some(cell));
         }
 
-        state.machine.edit(cell as usize, value);
+        // Stored as the memory editor stores it, so -1 is FFFF on MARIE.
+        state.machine.edit(cell as usize, format.word(value));
 
         Ok((address, cell))
     }
@@ -192,6 +195,27 @@ mod tests {
                 ("SetPc 105 (address 105 reduced to 5)".to_string(), true),
             ]
         );
+    }
+
+    #[test]
+    fn setmem_stores_values_in_the_machines_encoding() {
+        let mut state = AppState::new();
+        let mut debug = Debug::new();
+
+        debug.send(&mut state, "SetMem 5 -1".to_string());
+
+        assert_eq!(state.machine.memory.read(5), 0);
+        assert_eq!(debug.command_history, [("SetMem 5 -1".to_string(), false)]);
+
+        state.machine.instruction_set = InstructionSet::marie();
+        debug.send(&mut state, "SetMem 5 -1".to_string());
+        debug.send(&mut state, "SetMem 6 32768".to_string());
+
+        assert_eq!(state.machine.memory.read(5), 0xFFFF);
+        assert_eq!(state.machine.memory.read(6), 0);
+        assert!(crate::program::Program::from_machine("x".to_string(), &state.machine)
+            .check()
+            .is_ok());
     }
 
     #[test]

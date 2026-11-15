@@ -726,7 +726,7 @@ mod tests {
         machine.instruction_set.definitions[1].code = 77;
         machine.breakpoints.insert(1);
 
-        let path = std::env::temp_dir().join("vnm-roundtrip-test.json");
+        let path = crate::utilities::temp_path("roundtrip.json");
         Program::from_machine("roundtrip".to_string(), &machine)
             .save(&path)
             .unwrap();
@@ -817,7 +817,7 @@ mod tests {
         let old = r#"{"name":"Old","definitions":[{"code":1,"mnemonic":"LOAD","opcode":"Load"}]}"#;
         let set: InstructionSet = serde_json::from_str(old).unwrap();
 
-        assert_eq!(set.steps(1), Opcode::Load.micro());
+        assert_eq!(set.steps_for(1, 0), Opcode::Load.micro());
     }
 
     #[test]
@@ -858,7 +858,7 @@ mod tests {
 
         assert_eq!(set.format, Format::johnny());
         assert_eq!(set.mnemonic_for(1, 0), "TAKE");
-        assert_eq!(set.steps(1), Opcode::Load.micro());
+        assert_eq!(set.steps_for(1, 0), Opcode::Load.micro());
         assert!(set.find(2).is_none());
     }
 

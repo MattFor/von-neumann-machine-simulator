@@ -10,29 +10,29 @@ use crate::utilities::read_text;
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Opcode {
     #[default]
-    Nop = 0,
-    Load = 1,
-    Store = 2,
-    Add = 3,
-    Sub = 4,
-    Mul = 5,
-    Div = 6,
+    Nop,
+    Load,
+    Store,
+    Add,
+    Sub,
+    Mul,
+    Div,
 
-    Jump = 7,
-    JumpIfZero = 8,
+    Jump,
+    JumpIfZero,
 
-    Input = 9,
-    Output = 10,
+    Input,
+    Output,
 
-    Inc = 11,
-    Dec = 12,
-    Null = 13,
-    Tst = 14,
+    Inc,
+    Dec,
+    Null,
+    Tst,
 
-    Halt = 255,
+    Halt,
 
     // Runs the micro steps stored in its definition.
-    Custom = 256,
+    Custom,
 }
 
 // One elementary move inside the machine; every instruction is a list of these.
@@ -450,27 +450,14 @@ impl InstructionSet {
             })
     }
 
-    pub fn steps(&self, code: i32) -> &[MicroOp] {
-        let unknown = match self.format.unknown_code {
-            UnknownCode::Nop => Opcode::Nop,
-            UnknownCode::Halt => Opcode::Halt,
-        };
-
-        self.find(code)
-            .map_or(unknown.micro(), Definition::steps)
-    }
-
     pub fn steps_for(&self, code: i32, operand: i32) -> &[MicroOp] {
         let unknown = match self.format.unknown_code {
             UnknownCode::Nop => Opcode::Nop,
             UnknownCode::Halt => Opcode::Halt,
         };
 
-        match self.find_instruction(code, operand) {
-            Some(definition) => definition.steps(),
-            None if self.find(code).is_some() => unknown.micro(),
-            None => self.steps(code),
-        }
+        self.find_instruction(code, operand)
+            .map_or(unknown.micro(), Definition::steps)
     }
 
     pub fn mnemonic_for(&self, code: i32, operand: i32) -> String {
@@ -949,7 +936,7 @@ mod tests {
     use super::*;
 
     fn load(name: &str, text: &str) -> anyhow::Result<InstructionSet> {
-        let path = std::env::temp_dir().join(format!("vnm-test-{name}"));
+        let path = crate::utilities::temp_path(&format!("set-{name}"));
         fs::write(&path, text).unwrap();
 
         let set = InstructionSet::load(&path);
@@ -982,7 +969,7 @@ mod tests {
     #[test]
     fn every_preset_saves_its_format_and_loads_it_back() {
         for preset in InstructionSet::presets() {
-            let path = std::env::temp_dir().join(format!("vnm-test-preset-{}.json", preset.name));
+            let path = crate::utilities::temp_path(&format!("preset-{}.json", preset.name));
 
             preset.save(&path).unwrap();
             let text = fs::read_to_string(&path).unwrap();
@@ -1030,7 +1017,7 @@ mod tests {
 
         let set = InstructionSet::from_mc("blank", &lines.join("\r\n")).unwrap();
 
-        assert_eq!(set.steps(1), Opcode::Load.micro());
+        assert_eq!(set.steps_for(1, 0), Opcode::Load.micro());
     }
 
     #[test]

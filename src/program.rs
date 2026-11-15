@@ -3,7 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use crate::assembler::{assemble, disassemble};
+use crate::assembler::{as_read, assemble, disassemble};
 use crate::machine::{DataEncoding, InstructionSet, MEMORY_SIZE, Machine};
 use crate::utilities::read_text;
 
@@ -41,12 +41,21 @@ fn validate_program(program: &Program, set: Option<&InstructionSet>) -> anyhow::
     if let Some(set) = set {
         set.check()?;
 
-        if set.format.data_encoding == DataEncoding::Lmc {
+        let format = &set.format;
+        let cells = format.cells();
+
+        anyhow::ensure!(
+            usize::from(program.entry_point) < cells,
+            "the program starts at {}, past the last cell, {}",
+            format.text(program.entry_point.into(), 1),
+            format.text(cells as i32 - 1, 1)
+        );
+
+        if format.data_encoding == DataEncoding::Lmc {
             anyhow::ensure!(
-                program.memory.len() <= set.format.cells()
+                program.memory.len() <= cells
                     && program.memory.iter().all(|word| (-999..=999).contains(word)),
-                "an LMC program has at most {} cells, each between -999 and 999",
-                set.format.cells()
+                "an LMC program has at most {cells} cells, each between -999 and 999"
             );
 
             return Ok(());
@@ -208,8 +217,13 @@ impl Program {
         })
     }
 
-    // Files ending in .ram are Johnny programs, .asm are text in the mnemonics of `set`, .mas
-    // are MARIE's, everything else is JSON.
+    // Whether the program fits the set it carries, the one it will run on.
+    pub fn check(&self) -> anyhow::Result<()> {
+        validate_program(self, self.instruction_set.as_ref())
+    }
+
+    // Files ending in .ram are Johnny's words without a set, .asm are text in the mnemonics of
+    // `set`, .mas are MARIE's, everything else is JSON.
     pub fn load(path: &Path, set: &InstructionSet) -> anyhow::Result<Self> {
         let text = read_text(path)?;
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -234,7 +248,7 @@ impl Program {
         } else if has_extension(path, "asm") {
             validate_program(&program, Some(set))?;
         } else {
-            validate_program(&program, program.instruction_set.as_ref())?;
+            program.check()?;
         }
 
         Ok(program)
@@ -252,29 +266,27 @@ impl Program {
                 "a .ram file holds Johnny's words: radix 10, 2 code digits and 3 operand digits"
             );
 
-            // No set travels in a .ram file, so Bonsai or an edited set would load back as Johnny.
-            // Refused rather than documented, since Johnny's own Bonsai saves could not be checked.
-            anyhow::ensure!(
-                own.definitions == InstructionSet::johnny().definitions,
-                "a .ram file loads with Johnny's instructions, so save {} as .json or .asm",
-                own.name
-            );
             anyhow::ensure!(
                 self.entry_point == 0,
                 "a .ram file has no entry point, so the program must start at 0"
             );
 
-            // .ram files are always loaded as Johnny programs, regardless of their embedded set.
+            // Only words travel, as in Johnny, so they are checked the way a load checks them.
             validate_ram_program(self, &InstructionSet::johnny())?;
 
             self.to_ram()
         } else if has_extension(path, "asm") || has_extension(path, "mas") {
             let marie = InstructionSet::marie();
             let set = if has_extension(path, "mas") {
-                // .mas files always load as MARIE programs.
+                // .mas files always load as MARIE programs, so another set would be lost.
                 anyhow::ensure!(
                     own.format == marie.format,
                     "a .mas file holds MARIE's words: 16-bit hex, 1 code digit and 3 operand digits"
+                );
+                anyhow::ensure!(
+                    own.definitions == marie.definitions,
+                    "a .mas file loads with MARIE's instructions, so save {} as .json or .asm",
+                    own.name
                 );
 
                 &marie
@@ -286,20 +298,17 @@ impl Program {
 
             // Words or cells the format cannot hold would not load back.
             let (memory, entry_point) = assembled(&text, set)?;
-            let length = self
-                .memory
-                .iter()
-                .rposition(|word| *word != 0)
-                .map_or(0, |index| index + 1);
+            let format = &set.format;
 
             anyhow::ensure!(
-                (&memory[..], entry_point) == (&self.memory[..length], self.entry_point),
+                (as_read(&memory, format), entry_point)
+                    == (as_read(&self.memory, format), self.entry_point),
                 "this program would not read back the same from an .asm file"
             );
 
             text
         } else {
-            validate_program(self, self.instruction_set.as_ref())?;
+            self.check()?;
             serde_json::to_string_pretty(self)?
         };
 
@@ -325,10 +334,11 @@ impl Program {
 mod tests {
     use super::*;
     use crate::machine::{Format, PcOverflow};
+    use crate::utilities::temp_path;
 
     // A file of its own per test, since tests run in parallel.
     fn load(name: &str, text: &str) -> anyhow::Result<Program> {
-        let path = std::env::temp_dir().join(format!("vnm-test-{name}"));
+        let path = temp_path(name);
         fs::write(&path, text).unwrap();
 
         let program = Program::load(&path, &InstructionSet::default());
@@ -371,7 +381,7 @@ mod tests {
 
     #[test]
     fn only_a_johnny_program_is_saved_as_ram() {
-        let path = std::env::temp_dir().join("vnm-test-standard.ram");
+        let path = temp_path("standard.ram");
         let mut machine = Machine::new();
 
         let saved = Program::from_machine("x".to_string(), &machine).save(&path);
@@ -388,7 +398,7 @@ mod tests {
 
     #[test]
     fn ram_files_need_a_johnny_compatible_format() {
-        let path = std::env::temp_dir().join("vnm-test-compatible.ram");
+        let path = temp_path("compatible.ram");
         let mut machine = Machine::new();
         machine.instruction_set = InstructionSet::johnny();
         machine.instruction_set.format.pc_overflow = PcOverflow::Halt;
@@ -406,24 +416,67 @@ mod tests {
         assert!(error.to_string().contains("radix 10"));
     }
 
+    // Like Johnny's own simulator, any set of Johnny's words saves its words.
     #[test]
-    fn a_bonsai_program_is_not_saved_as_ram() {
-        let path = std::env::temp_dir().join("vnm-test-bonsai.ram");
+    fn bonsai_and_microcode_programs_are_saved_as_ram() {
+        let path = temp_path("bonsai.ram");
+        let microcode = InstructionSet::from_mc("mine", &"0\n".repeat(200)).unwrap();
+
+        for set in [InstructionSet::bonsai(), microcode] {
+            let mut machine = Machine::new();
+            machine.instruction_set = set;
+            machine.memory.load(&[1005, 5000]);
+
+            Program::from_machine("x".to_string(), &machine)
+                .save(&path)
+                .unwrap();
+            let loaded = Program::load(&path, &machine.instruction_set).unwrap();
+            fs::remove_file(&path).unwrap();
+
+            assert_eq!(loaded.memory[..2], [1005, 5000]);
+        }
+    }
+
+    #[test]
+    fn a_mas_file_does_not_drop_a_changed_marie_set() {
+        let path = temp_path("changed.mas");
         let mut machine = Machine::new();
-        machine.instruction_set = InstructionSet::bonsai();
+        machine.instruction_set = InstructionSet::marie();
+        machine.instruction_set.definitions[1].mnemonic = "Fetch".to_string();
+        machine.memory.load(&[0x1000]);
 
         let error = Program::from_machine("x".to_string(), &machine)
             .save(&path)
             .unwrap_err();
         let written = fs::remove_file(&path).is_ok();
 
-        assert!(error.to_string().contains("save Bonsai as .json or .asm"), "{error}");
+        assert!(error.to_string().contains("MARIE's instructions"), "{error}");
+        assert!(!written);
+    }
+
+    #[test]
+    fn an_entry_point_past_the_last_cell_is_refused_on_load_and_save() {
+        let program = Program {
+            name: "x".to_string(),
+            entry_point: 0x12C,
+            memory: vec![0x0105],
+            instruction_set: Some(InstructionSet::default()),
+        };
+        let path = temp_path("far-entry.asm");
+
+        let loaded = load("far-entry.json", &serde_json::to_string(&program).unwrap());
+        let saved = program.save(&path);
+        let written = fs::remove_file(&path).is_ok();
+
+        for error in [loaded.unwrap_err(), saved.unwrap_err()] {
+            assert_eq!(error.to_string(), "the program starts at 12C, past the last cell, FF");
+        }
         assert!(!written);
     }
 
     #[test]
     fn a_ram_file_cannot_start_past_cell_0() {
-        let path = std::env::temp_dir().join("vnm-test-entry.ram");
+        let path = temp_path("entry.ram");
         let program = Program {
             name: "x".to_string(),
             entry_point: 2,
@@ -440,7 +493,7 @@ mod tests {
 
     #[test]
     fn ram_saves_validate_using_the_set_that_load_will_use() {
-        let path = std::env::temp_dir().join("vnm-test-lmc-data.ram");
+        let path = temp_path("lmc-data.ram");
         let mut set = InstructionSet::johnny();
         set.format.data_encoding = DataEncoding::Lmc;
         let program = Program {
@@ -478,7 +531,7 @@ mod tests {
 
     #[test]
     fn a_saved_program_keeps_its_format() {
-        let path = std::env::temp_dir().join("vnm-test-format.json");
+        let path = temp_path("format.json");
         let mut machine = Machine::new();
         machine.instruction_set.format = Format {
             radix: 8,
@@ -516,7 +569,7 @@ mod tests {
         machine.instruction_set = InstructionSet::lmc();
 
         let program = Program::from_machine("countdown".to_string(), &machine);
-        let path = std::env::temp_dir().join("vnm-test-countdown-lmc.json");
+        let path = temp_path("countdown-lmc.json");
         let save_error = program.save(&path).unwrap_err().to_string();
         fs::write(&path, serde_json::to_string(&program).unwrap()).unwrap();
         let load_error = Program::load(&path, &InstructionSet::default())
@@ -545,7 +598,7 @@ mod tests {
 
     #[test]
     fn huge_files_are_refused_before_they_are_read() {
-        let path = std::env::temp_dir().join("vnm-test-huge.json");
+        let path = temp_path("huge.json");
         fs::File::create(&path)
             .unwrap()
             .set_len(16 * 1024 * 1024 + 1)
@@ -559,7 +612,7 @@ mod tests {
 
     #[test]
     fn asm_files_are_written_and_read_in_the_loaded_set() {
-        let path = std::env::temp_dir().join("vnm-test-sum.ASM");
+        let path = temp_path("sum.ASM");
         let mut machine = Machine::new();
         machine.instruction_set = InstructionSet::johnny();
         Program::from_ram("sum", include_str!("../assets/sum.ram"))
@@ -582,7 +635,7 @@ mod tests {
 
     #[test]
     fn lmc_asm_files_keep_negative_data() {
-        let path = std::env::temp_dir().join("vnm-test-negative-lmc.asm");
+        let path = temp_path("negative-lmc.asm");
         let set = InstructionSet::lmc();
         let saved = Program {
             name: "negative".to_string(),
@@ -603,7 +656,7 @@ mod tests {
 
     #[test]
     fn mas_files_are_marie_programs_whatever_set_is_loaded() {
-        let path = std::env::temp_dir().join("vnm-test-echo.MAS");
+        let path = temp_path("echo.MAS");
         let mut machine = Machine::new();
         machine.instruction_set = InstructionSet::marie();
         machine.memory.load(&[0x5000, 0x6000, 0x7000, 0xFFE9]);
@@ -631,9 +684,7 @@ mod tests {
 
     #[test]
     fn a_fixed_cell_is_saved_as_its_word() {
-        let [json, asm] = ["json", "asm"].map(|extension| {
-            std::env::temp_dir().join(format!("vnm-test-fixed.{extension}"))
-        });
+        let [json, asm] = ["json", "asm"].map(|extension| temp_path(&format!("fixed.{extension}")));
         let mut machine = Machine::new();
         machine.instruction_set = InstructionSet::cardiac();
         machine.memory.load(&[5, 900]);
@@ -652,6 +703,21 @@ mod tests {
         assert_eq!(loaded.map(|program| program.unwrap().memory), [[1, 900], [1, 900]]);
     }
 
+    // A file's raw cell 0 is not what the machine reads there, the loader's word is.
+    #[test]
+    fn a_cardiac_file_whose_fixed_cell_is_raw_converts_to_asm() {
+        let text = r#"{"name":"x","entry_point":1,"memory":[0,900],"instruction_set":"#;
+        let set = serde_json::to_string(&InstructionSet::cardiac()).unwrap();
+        let program = load("raw-fixed.json", &format!("{text}{set}}}")).unwrap();
+        let path = temp_path("raw-fixed.asm");
+
+        program.save(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+
+        assert_eq!(text, "ORG 1\nHRS 0\n");
+    }
+
     #[test]
     fn asm_files_report_the_first_mistake_and_how_many_more() {
         let error = load("mistakes.asm", "LOAD 1\nFOO\nBAR\n").unwrap_err();
@@ -661,7 +727,7 @@ mod tests {
 
     #[test]
     fn memory_the_format_cannot_hold_is_not_saved_as_asm() {
-        let path = std::env::temp_dir().join("vnm-test-wide.asm");
+        let path = temp_path("wide.asm");
         let mut machine = Machine::new();
         machine.instruction_set = InstructionSet::johnny();
         machine.memory.write(0, 65535);

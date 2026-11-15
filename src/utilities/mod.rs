@@ -19,6 +19,12 @@ pub fn read_text(path: &Path) -> anyhow::Result<String> {
     Ok(String::from_utf8(bytes)?)
 }
 
+// Named after the process too, so two checkouts testing at once never share a file.
+#[cfg(test)]
+pub fn temp_path(name: &str) -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("vnm-test-{}-{name}", std::process::id()))
+}
+
 /**
  * Take a string num representation f.e 1234 or 0x1234
  * Strip 0x or 0X prefix if present

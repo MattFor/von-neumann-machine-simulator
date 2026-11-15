@@ -17,8 +17,8 @@ loads a program and saves it in the format of <out>'s extension.
 
 Options:
   --machine <name>  standard, johnny, bonsai, lmc, marie, cardiac or sap1. Default: the set in
-                    the file, Johnny for .ram. An .asm file needs it; a .mas file is
-                    always MARIE
+                    the file, Johnny for .ram. An .asm file needs it; a .ram file
+                    runs on johnny or bonsai, a .mas file always on MARIE
   --input <values>  numbers for IN to read, separated by commas: --input 1,2,-3. 0x and 0b
                     are words in the machine's encoding, so 0xFFFF is -1 on MARIE
   --max-steps <n>   how many instructions to run at most (default 100000)
@@ -146,6 +146,9 @@ fn load(file: &str, set: Option<InstructionSet>) -> anyhow::Result<Program> {
         Some(set) if has_extension(path, "mas") && set != InstructionSet::marie() => {
             anyhow::bail!("a .mas file is always MARIE, so --machine can only be marie")
         }
+        Some(set) if is_ram(path) && !set.format.johnny_compatible() => anyhow::bail!(
+            "a .ram file holds Johnny's words, so --machine can only be johnny or bonsai"
+        ),
         Some(set) => Some(set),
         None if is_ram(path) => Some(InstructionSet::johnny()),
         None if has_extension(path, "asm") => {
@@ -157,6 +160,9 @@ fn load(file: &str, set: Option<InstructionSet>) -> anyhow::Result<Program> {
     let mut program = Program::load(path, set.as_ref().unwrap_or(&InstructionSet::default()))
         .with_context(|| file.to_string())?;
     program.instruction_set = set.or(program.instruction_set);
+
+    // Checked again on the machine that runs it, which --machine may have changed.
+    program.check().with_context(|| file.to_string())?;
 
     Ok(program)
 }
@@ -225,12 +231,14 @@ fn print_output(machine: &mut Machine) {
 }
 
 // A reader that went away, as `| head` does, ends the run with the 128 + SIGPIPE of other tools.
+// Any other failure, like a full disk, is said on stderr if that still works.
 fn print(mut out: impl Write, line: impl Display) {
     if let Err(error) = writeln!(out, "{line}") {
         if error.kind() == ErrorKind::BrokenPipe {
             std::process::exit(141);
         }
 
-        panic!("failed printing: {error}");
+        let _ = writeln!(io::stderr(), "error: failed printing: {error}");
+        std::process::exit(1);
     }
 }

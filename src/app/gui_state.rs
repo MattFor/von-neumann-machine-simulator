@@ -325,8 +325,8 @@ impl AppState {
     pub fn open_program_at(&mut self, path: &Path) {
         match Program::load(path, &self.machine.instruction_set) {
             Ok(program) => {
-                // Johnny's files go to Johnny even from Bonsai, whose words are the same.
-                if is_ram(path) {
+                // Johnny's words run on any machine of them, as in Johnny, else on Johnny.
+                if is_ram(path) && !self.machine.instruction_set.format.johnny_compatible() {
                     self.route(&InstructionSet::johnny());
                 }
 
@@ -387,9 +387,16 @@ impl AppState {
 
     pub fn open_set_at(&mut self, path: &Path) {
         match InstructionSet::load(path) {
-            Ok(set) => {
+            Ok(mut set) => {
+                let format = self.machine.instruction_set.format;
+
+                // Microcode only, so it runs on this machine's words if they are Johnny's.
                 if has_extension(path, "mc") {
-                    self.route(&InstructionSet::johnny());
+                    if format.johnny_compatible() {
+                        set.format = format;
+                    } else {
+                        self.route(&InstructionSet::johnny());
+                    }
                 }
 
                 self.use_set(set);
@@ -428,6 +435,7 @@ impl AppState {
 mod tests {
     use super::*;
     use crate::program::examples;
+    use crate::utilities::temp_path;
 
     #[test]
     fn a_set_that_matches_no_preset_is_custom() {
@@ -498,30 +506,51 @@ mod tests {
         assert_eq!(state.machine.memory.read(0), 0x0a0b);
     }
 
+    // As in Johnny, its files load into any machine of its words, and onto Johnny from others.
     #[test]
-    fn johnny_files_opened_on_bonsai_go_to_johnny_and_leave_bonsai_alone() {
-        let ram = std::env::temp_dir().join("vnm-test-bonsai.ram");
-        let mc = std::env::temp_dir().join("vnm-test-bonsai.mc");
+    fn johnny_files_load_into_a_machine_of_johnnys_words_else_onto_johnny() {
+        let ram = temp_path("gui-sum.ram");
+        let mc = temp_path("gui-mine.mc");
         std::fs::write(&ram, include_str!("../../assets/sum.ram")).unwrap();
         std::fs::write(&mc, "0\n".repeat(200)).unwrap();
 
-        for path in [&ram, &mc] {
-            let mut state = AppState::new();
-            state.pick(2);
-            state.machine.memory.write(0, 5);
+        // Bonsai, and a Johnny-compatible format of LMC's machine, keep the file.
+        let mut halting = InstructionSet::bonsai();
+        halting.format.pc_overflow = crate::machine::PcOverflow::Halt;
 
-            if is_ram(path) {
-                state.open_program_at(path);
-            } else {
-                state.open_set_at(path);
+        for (preset, set, target) in [
+            (2, InstructionSet::bonsai(), 2),
+            (3, halting.clone(), 3),
+            (3, InstructionSet::lmc(), 1),
+        ] {
+            for path in [&ram, &mc] {
+                let mut state = AppState::new();
+                state.pick(preset);
+                state.machine.instruction_set = set.clone();
+                state.machine.memory.write(0, 5);
+
+                if is_ram(path) {
+                    state.open_program_at(path);
+                } else {
+                    state.open_set_at(path);
+                }
+
+                assert_eq!(state.preset, target, "{path:?} on {}", set.name);
+
+                if is_ram(path) {
+                    assert_eq!(state.machine.memory.read(0), 1010);
+                } else {
+                    assert!(state.machine.instruction_set.name.ends_with("gui-mine"));
+                }
+
+                if target == preset {
+                    assert_eq!(state.machine.instruction_set.format, set.format);
+                } else {
+                    state.pick(preset);
+
+                    assert_eq!(state.machine.memory.read(0), 5);
+                }
             }
-
-            assert_eq!(state.preset, 1, "{path:?}");
-
-            state.pick(2);
-
-            assert_eq!(state.machine.memory.read(0), 5);
-            assert_eq!(state.machine.instruction_set, InstructionSet::presets()[2]);
         }
 
         std::fs::remove_file(&ram).unwrap();
@@ -570,7 +599,7 @@ mod tests {
 
     #[test]
     fn a_mas_file_switches_to_the_marie_machine() {
-        let path = std::env::temp_dir().join("vnm-test-switch.mas");
+        let path = temp_path("gui-switch.mas");
         std::fs::write(&path, "Input\nOutput\nHalt\n").unwrap();
 
         let mut state = AppState::new();

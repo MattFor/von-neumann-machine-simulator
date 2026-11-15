@@ -88,10 +88,11 @@ show them as `CF` and `ZF`.
 
 Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
 **Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
-files, both switch to Johnny by themselves, also from Bonsai, whose machine is left
-as it was. Saving a program under a name ending in `.ram` writes a Johnny file. It holds
-no set or entry point, so only a program in Johnny's own instructions that starts at 0 is
-saved that way; Bonsai programs go to `.json` or `.asm`.
+files. As in Johnny, they load into any machine of Johnny's words, like Bonsai or a
+set from a `.mc` file; from any other machine they switch to Johnny, and the machine
+left is kept as it was. Saving a program under a name ending in `.ram` writes a Johnny
+file. It holds only the words, no set or entry point, so any program in Johnny's words
+that starts at 0 is saved that way, Bonsai's too.
 
 Once the set or its format matches none of the presets, the picker says **Custom**.
 Picking the machine again gives it its own set back and keeps the memory.
@@ -158,7 +159,8 @@ count:  DAT 5
   Instructions with a fixed operand, like LMC's `INP` and `OUT`, take none; MARIE's
   `Skipcond` takes its condition, as in `Skipcond 400`.
 - Numbers are in the set's radix unless `0x`, `0b` or `0d` says otherwise, and a
-  label can stand in for one. A label ends in `:` or MARIE's `,`, or is LMC's first
+  label can stand in for one. Where B or D is a digit, as in hex, `0B` and `0D` are
+  just numbers, so MARIE's `HEX 0D05` is `D05`. A label ends in `:` or MARIE's `,`, or is LMC's first
   word that is not a mnemonic (a directive's name counts as a label there).
 - `DAT n` (`DAT` alone is 0) writes a number, as do MARIE's `DEC n` and `HEX n`. On
   MARIE, `DEC -1` is stored as `FFFF`. An instruction of the same name wins over
@@ -184,6 +186,8 @@ von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --inp
 
 - `--machine standard|johnny|bonsai|lmc|marie|cardiac|sap1` picks the machine. Without it, a file
   runs on the set it carries, `.ram` on Johnny and JSON on Standard; `.asm` needs it.
+  A `.ram` file runs on `johnny` or `bonsai`, a `.mas` file only on `marie`, and a JSON
+  file is checked against the machine it runs on.
 - `--input 1,2,-3` is what `IN` reads. `0x` and `0b` values are words in the machine's
   encoding, so `0xFFFF` is -1 on MARIE.
 - `--max-steps N` stops after `N` instructions (100000 by default).

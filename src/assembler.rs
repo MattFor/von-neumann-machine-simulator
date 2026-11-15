@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-use crate::machine::{DataEncoding, Definition, InstructionSet};
+use crate::machine::{DataEncoding, Definition, Format, InstructionSet};
 
 // What a mnemonic names.
 enum Found<'a> {
@@ -85,12 +85,13 @@ fn op<'a>(set: &'a InstructionSet, word: &str) -> Option<Op<'a>> {
     }
 }
 
-// A number in the radix, unless 0x, 0b or 0d says otherwise.
+// A number in the radix, unless 0x, 0b or 0d says otherwise. Where B or D is a digit, as in
+// hex, 0B and 0D are numbers like the app shows.
 pub fn number(token: &str, radix: u32) -> Option<i32> {
     let (radix, digits) = match token.get(..2).map(str::to_ascii_lowercase).as_deref() {
         Some("0x") => (16, &token[2..]),
-        Some("0b") => (2, &token[2..]),
-        Some("0d") => (10, &token[2..]),
+        Some("0b") if radix <= 11 => (2, &token[2..]),
+        Some("0d") if radix <= 13 => (10, &token[2..]),
         _ => (radix, token),
     };
 
@@ -345,6 +346,25 @@ fn data_range(encoding: DataEncoding, kind: DataKind, max_word: i32) -> (i32, i3
     }
 }
 
+// The words the machine reads, so the fixed cell holds its word, without the trailing zero cells.
+// This is what `disassemble` reads back as.
+pub fn as_read(memory: &[i32], format: &Format) -> Vec<i32> {
+    let mut words = memory.to_vec();
+
+    if let Some((cell, word)) = format.fixed() {
+        words.resize(words.len().max(cell + 1), 0);
+        words[cell] = word;
+    }
+
+    let length = words
+        .iter()
+        .rposition(|word| *word != 0)
+        .map_or(0, |index| index + 1);
+    words.truncate(length);
+
+    words
+}
+
 // Memory as text that assembles back to the same words and entry point, without the trailing
 // zero cells.
 pub fn disassemble(memory: &[i32], entry_point: u16, set: &InstructionSet) -> String {
@@ -406,7 +426,6 @@ pub fn disassemble(memory: &[i32], entry_point: u16, set: &InstructionSet) -> St
 fn line(word: i32, set: &InstructionSet) -> String {
     let format = &set.format;
     let (code, operand) = set.split(word);
-    // Not zero-padded: in hex a padded 0B or 0D would read as a prefix.
     let operand = format.text(operand, 1);
     let data = match format.data_encoding {
         DataEncoding::Lmc if word < 0 => format!("DAT {word}"),
@@ -451,14 +470,10 @@ mod tests {
 
     fn round_trip(memory: &[i32], entry_point: u16, set: &InstructionSet) {
         let text = disassemble(memory, entry_point, set);
-        let length = memory
-            .iter()
-            .rposition(|word| *word != 0)
-            .map_or(0, |index| index + 1);
 
         assert_eq!(
             assemble(&text, set),
-            Ok((memory[..length].to_vec(), entry_point)),
+            Ok((as_read(memory, &set.format), entry_point)),
             "{}\n{text}",
             set.name
         );
@@ -501,9 +516,10 @@ mod tests {
         for set in InstructionSet::presets().into_iter().chain([unreadable]) {
             let words = set.limits().2 + 1;
             let cells = set.format.cells() as i32;
-            // An odd stride reaches every operand and most codes.
+            // An odd stride reaches every operand and most codes. Cell 0 is 2, not the CARDIAC
+            // loader's word, which the fixed cell reads as.
             let memory: Vec<i32> = (0..cells)
-                .map(|address| (address * 7919 + 1) % words)
+                .map(|address| (address * 7919 + 2) % words)
                 .collect();
 
             round_trip(&memory, (cells - 1) as u16, &set);
@@ -711,16 +727,27 @@ mod tests {
 
     #[test]
     fn numbers_are_in_the_radix_unless_a_prefix_says_otherwise() {
-        let text = "a: DAT 10\nDAT 0x10\nDAT 0d10\nDAT 0b10\nDAT 0B11\nDAT\nLOAD a";
+        let text = "a: DAT 10\nDAT 0x10\nDAT\nLOAD a";
 
         assert_eq!(
             assemble(text, &InstructionSet::default()),
-            Ok((vec![16, 16, 10, 2, 3, 0, 0x0100], 0))
+            Ok((vec![16, 16, 0, 0x0100], 0))
         );
+        let text = "DAT 10\nDAT 0x10\nDAT 0d10\nDAT 0b10\nDAT 0B11\nDEC 7";
+
         assert_eq!(
-            assemble("DAT 10\nDAT 0x10\nDEC 7", &InstructionSet::johnny()),
-            Ok((vec![10, 16, 8007], 0))
+            assemble(text, &InstructionSet::johnny()),
+            Ok((vec![10, 16, 10, 2, 3, 8007], 0))
         );
+        // In hex, B and D are digits, so 0B and 0D are numbers as the app shows them.
+        assert_eq!(
+            assemble("LOAD 0B\nDAT 0d10\nDAT 0B11\nDAT 0x0D", &InstructionSet::default()),
+            Ok((vec![0x010B, 0xD10, 0xB11, 0xD], 0))
+        );
+        let (memory, entry_point) =
+            assemble("ORG 0B0\nLoad 0D9\nX, HEX 0D05\nDEC 0d12", &InstructionSet::marie()).unwrap();
+
+        assert_eq!((entry_point, &memory[0xB0..]), (0xB0, &[0x10D9, 0xD05, 12][..]));
         // MARIE keeps negative data in two's complement.
         assert_eq!(
             assemble("DEC -23\nHEX FFE9", &InstructionSet::marie()),

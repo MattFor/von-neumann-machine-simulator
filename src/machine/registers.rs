@@ -1,9 +1,6 @@
-const VALUE_MIN: i32 = 0;
-const VALUE_MAX: i32 = 19_999;
-
 // The accumulator range of the presets; a format can set its own.
-pub const ACC_MIN: i32 = VALUE_MIN;
-pub const ACC_MAX: i32 = VALUE_MAX;
+pub const ACC_MIN: i32 = 0;
+pub const ACC_MAX: i32 = 19_999;
 
 #[derive(Clone, Copy, PartialEq)]
 pub struct Registers {

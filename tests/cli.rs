@@ -29,9 +29,10 @@ fn convert(args: &[&str]) -> (String, String, i32) {
     call(&[&["convert"], args].concat())
 }
 
-// A path in the temp directory, as a string for the arguments.
+// A path in the temp directory, as a string for the arguments. The process id keeps two
+// checkouts testing at once apart.
 fn temp(name: &str) -> String {
-    let path = std::env::temp_dir().join(format!("vnm-cli-{name}"));
+    let path = std::env::temp_dir().join(format!("vnm-cli-{}-{name}", std::process::id()));
 
     path.to_str().unwrap().to_string()
 }
@@ -164,6 +165,60 @@ fn files_bring_their_own_machine() {
 
     assert_eq!(code, 0);
     assert!(stderr.contains("002  04.012  SAVE 012  acc 12"), "{stderr}");
+}
+
+// As in Johnny, a .ram file is words for any machine of Johnny's words, and no other.
+#[test]
+fn a_ram_file_runs_on_bonsai_but_not_on_lmc() {
+    let args = ["assets/sum.ram", "--machine", "bonsai", "--trace", "--max-steps", "3"];
+    let (_, bonsai, code) = run(&args);
+
+    // Johnny's sum means something else in Bonsai's instructions, so it runs to the limit.
+    assert_eq!(code, 2, "{bonsai}");
+    assert!(bonsai.starts_with("000  01.010  INC 010"), "{bonsai}");
+
+    let out = temp("lmc-sum.json");
+    let refused = [
+        run(&["assets/sum.ram", "--machine", "lmc"]),
+        convert(&["assets/sum.ram", &out, "--machine", "lmc"]),
+    ];
+
+    for (stdout, stderr, code) in refused {
+        assert_eq!((stdout.as_str(), code), ("", 1));
+        assert!(stderr.contains("johnny or bonsai"), "{stderr}");
+    }
+
+    assert!(fs::metadata(&out).is_err());
+}
+
+// --machine decides what runs, so the file is checked against it, the same way by both.
+#[test]
+fn a_json_file_is_checked_against_the_machine_it_runs_on() {
+    let out = temp("countdown-lmc.asm");
+    let ran = run(&["assets/countdown.json", "--machine", "lmc"]);
+    let converted = convert(&["assets/countdown.json", &out, "--machine", "lmc"]);
+
+    assert_eq!((ran.0.as_str(), ran.2), ("", 1));
+    assert!(ran.1.contains("an LMC program has at most 100 cells"), "{}", ran.1);
+    assert_eq!(ran, converted);
+    assert!(fs::metadata(&out).is_err());
+}
+
+// Like output redirected to a full disk.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_failed_write_exits_with_1_without_a_panic() {
+    let full = fs::OpenOptions::new().write(true).open("/dev/full").unwrap();
+    let output = binary()
+        .arg("--help")
+        .stdout(full)
+        .stderr(Stdio::piped())
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert_eq!(output.status.code(), Some(1), "{stderr}");
+    assert!(stderr.starts_with("error: ") && !stderr.contains("panicked"), "{stderr}");
 }
 
 #[test]
