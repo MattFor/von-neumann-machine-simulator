@@ -7,6 +7,39 @@ use std::time::Instant;
 pub const MIN_SPEED: usize = 1;
 pub const MAX_SPEED: usize = 10_000;
 
+// Name and description of every machine, in the order of InstructionSet::presets.
+pub const PRESETS: [(&str, &str); 5] = [
+    (
+        "Standard",
+        "Hex words: a byte of instruction code, then a byte of operand. 256 cells",
+    ),
+    (
+        "Johnny",
+        "Like the Johnny simulator: decimal words (two digits of instruction, three of address), \
+         1000 cells and the instructions TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL, HLT",
+    ),
+    (
+        "Bonsai",
+        "Johnny's words with its minimal set: INC, DEC, JMP, TST, HLT",
+    ),
+    (
+        "Little Man Computer",
+        "Three decimal digits per mailbox, 100 mailboxes, and values from -999 to 999",
+    ),
+    (
+        "MARIE",
+        "16-bit hex words: one digit of instruction, three of address. 4096 cells and \
+         two's complement numbers",
+    ),
+];
+
+// Which preset a set is, if it is one exactly; anything else is Custom.
+pub fn preset_of(set: &InstructionSet) -> Option<usize> {
+    InstructionSet::presets()
+        .iter()
+        .position(|preset| preset == set)
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum UiMode {
     Machine,
@@ -22,8 +55,11 @@ pub struct AppState {
 
     pub machine: Machine,
 
-    // The machine of the other mode (standard or Johnny) and its program name.
-    pub other: (Machine, Option<String>),
+    // The preset whose machine is loaded; editing its set does not make it another one's.
+    pub preset: usize,
+
+    // The machines of the other presets with their program names.
+    pub others: Vec<(usize, Machine, Option<String>)>,
 
     // Off shows the simple view, on shows everything.
     pub advanced: bool,
@@ -53,7 +89,8 @@ impl AppState {
             mode: UiMode::Machine,
 
             machine: Machine::new(),
-            other: (Machine::new(), None),
+            preset: 0,
+            others: Vec::new(),
 
             advanced: false,
 
@@ -104,50 +141,89 @@ impl AppState {
         }
     }
 
-    // Johnny mode is any format that reads Johnny's files.
-    pub fn johnny(&self) -> bool {
-        self.machine.instruction_set.format.johnny_compatible()
+    // Everything that decides which panels are shown and where.
+    pub fn layout(&self) -> impl PartialEq + use<> {
+        (
+            self.mode,
+            self.advanced,
+            [
+                self.show_memory,
+                self.show_registers,
+                self.show_control_unit,
+                self.show_cpu,
+                self.show_console,
+            ],
+            self.preset,
+            self.machine.instruction_set.format,
+        )
     }
 
-    // Each mode has its own machine, so switching back and forth loses nothing.
-    pub fn toggle_johnny(&mut self) {
-        let johnny = self.johnny();
-
-        if self.other.0.instruction_set.format.johnny_compatible() == johnny {
-            self.other = (Machine::new(), None);
-
-            if !johnny {
-                self.other.0.instruction_set = InstructionSet::johnny();
-            }
+    // Each preset has its own machine, so switching back and forth loses nothing.
+    pub fn switch(&mut self, preset: usize) {
+        if preset == self.preset {
+            return;
         }
 
-        std::mem::swap(&mut self.machine, &mut self.other.0);
-        std::mem::swap(&mut self.program_name, &mut self.other.1);
+        let (machine, name) = match self.others.iter().position(|(slot, ..)| *slot == preset) {
+            Some(index) => {
+                let (_, machine, name) = self.others.remove(index);
+
+                (machine, name)
+            }
+
+            None => {
+                let mut machine = Machine::new();
+                machine.instruction_set = InstructionSet::presets()[preset].clone();
+
+                (machine, None)
+            }
+        };
+
+        let machine = std::mem::replace(&mut self.machine, machine);
+        let name = std::mem::replace(&mut self.program_name, name);
+
+        self.others.push((self.preset, machine, name));
+        self.preset = preset;
 
         self.running = false;
-        self.status_message = if johnny {
-            "Standard mode"
-        } else {
-            "Johnny mode: decimal words, 1000 cells"
-        }
-        .to_string();
+        self.status_message = format!("{} machine", PRESETS[preset].0);
     }
 
-    // A set written for the other mode switches to that mode first.
-    pub fn use_set(&mut self, set: InstructionSet) {
-        if set.format.johnny_compatible() != self.johnny() {
-            self.toggle_johnny();
+    // The picker: another preset's machine as it was left, or this one's set back if it was changed.
+    pub fn pick(&mut self, preset: usize) {
+        if preset != self.preset {
+            self.switch(preset);
+        } else if preset_of(&self.machine.instruction_set).is_none() {
+            self.machine.instruction_set = InstructionSet::presets()[preset].clone();
+            self.running = false;
+            self.status_message = format!("Restored the {} instruction set", PRESETS[preset].0);
         }
+    }
+
+    // A preset's set goes to that preset's machine, any other set to a machine of its format.
+    fn route(&mut self, set: &InstructionSet) {
+        let presets = InstructionSet::presets();
+        let target = preset_of(set).or_else(|| {
+            (set.format != self.machine.instruction_set.format)
+                .then(|| presets.iter().position(|preset| preset.format == set.format))
+                .flatten()
+        });
+
+        if let Some(preset) = target {
+            self.switch(preset);
+        }
+    }
+
+    pub fn use_set(&mut self, set: InstructionSet) {
+        self.route(&set);
 
         self.status_message = format!("Loaded the {} instruction set", set.name);
         self.machine.instruction_set = set;
     }
 
-    fn load(&mut self, program: Program) {
-        if let Some(set) = &program.instruction_set
-            && set.format.johnny_compatible() != self.johnny()
-        {
-            self.toggle_johnny();
+    pub fn load(&mut self, program: Program) {
+        if let Some(set) = &program.instruction_set {
+            self.route(set);
         }
 
         program.apply(&mut self.machine);
@@ -155,16 +231,6 @@ impl AppState {
         self.running = false;
         self.status_message = format!("Loaded {}", program.name);
         self.program_name = Some(program.name);
-    }
-
-    pub fn load_example(&mut self) {
-        let example = if self.johnny() {
-            Program::from_ram("sum", include_str!("../../assets/sum.ram"))
-        } else {
-            serde_json::from_str(include_str!("../../assets/countdown.json")).map_err(Into::into)
-        };
-
-        self.load(example.expect("bundled example is valid"));
     }
 
     pub fn reset(&mut self) {
@@ -190,8 +256,8 @@ impl AppState {
 
         match Program::load(&path, &self.machine.instruction_set) {
             Ok(program) => {
-                if is_ram(&path) && !self.johnny() {
-                    self.toggle_johnny();
+                if is_ram(&path) && !self.machine.instruction_set.format.johnny_compatible() {
+                    self.route(&InstructionSet::johnny());
                 }
 
                 self.load(program);
@@ -274,5 +340,80 @@ impl AppState {
                 self.status_message = format!("Could not save instruction set: {error}");
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::program::examples;
+
+    #[test]
+    fn a_set_that_matches_no_preset_is_custom() {
+        for (index, preset) in InstructionSet::presets().into_iter().enumerate() {
+            assert_eq!(preset_of(&preset), Some(index), "{}", preset.name);
+        }
+
+        let mut renamed = InstructionSet::lmc();
+        renamed.definitions[0].mnemonic = "PLUS".to_string();
+        let mut smaller = InstructionSet::marie();
+        smaller.format.cells = Some(100);
+
+        assert_eq!(preset_of(&renamed), None);
+        assert_eq!(preset_of(&smaller), None);
+    }
+
+    #[test]
+    fn every_preset_keeps_its_own_machine_and_changed_set() {
+        let mut state = AppState::new();
+        let sum = examples()
+            .into_iter()
+            .find(|example| example.name == "Johnny sum")
+            .unwrap();
+
+        state.load(sum.program);
+
+        assert_eq!((state.preset, state.machine.memory.read(0)), (1, 1010));
+
+        state.pick(3);
+
+        assert_eq!(state.machine.instruction_set, InstructionSet::lmc());
+        assert_eq!(state.machine.memory.read(0), 0);
+        assert_eq!(state.program_name, None);
+
+        state.machine.memory.write(0, 902);
+        state.machine.instruction_set.definitions[0].mnemonic = "PLUS".to_string();
+        state.pick(1);
+
+        assert_eq!(state.machine.memory.read(0), 1010);
+        assert_eq!(state.program_name.as_deref(), Some("sum"));
+
+        state.pick(3);
+
+        assert_eq!(state.machine.memory.read(0), 902);
+        assert_eq!(preset_of(&state.machine.instruction_set), None);
+
+        // Picked again, the machine gets its set back and keeps its memory.
+        state.pick(3);
+
+        assert_eq!(state.machine.instruction_set, InstructionSet::lmc());
+        assert_eq!(state.machine.memory.read(0), 902);
+        assert_eq!(state.others.len(), 2);
+    }
+
+    #[test]
+    fn a_set_of_another_format_goes_to_a_machine_of_that_format() {
+        let mut state = AppState::new();
+        state.machine.memory.write(0, 0x0a0b);
+
+        let microcode = InstructionSet::from_mc("mine", &"0\n".repeat(200)).unwrap();
+        state.use_set(microcode);
+
+        assert_eq!(state.preset, 1);
+        assert_eq!(state.machine.instruction_set.name, "mine");
+
+        state.pick(0);
+
+        assert_eq!(state.machine.memory.read(0), 0x0a0b);
     }
 }

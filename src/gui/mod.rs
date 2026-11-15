@@ -2,15 +2,18 @@ pub mod console_view;
 pub mod control_unit_view;
 pub mod cpu_view;
 pub mod data_bus_view;
+pub mod format_view;
 pub mod guide_view;
 pub mod instruction_set_view;
 pub mod memory_view;
 pub mod register_view;
 pub mod theme;
 
+use std::ops::RangeInclusive;
+
 use egui::{KeyboardShortcut, Ui};
 
-use crate::machine::{Format, Machine, MicroOp};
+use crate::machine::{DataEncoding, Format, Machine, MicroOp};
 
 // A button that also fires on its keyboard shortcut.
 pub fn action(
@@ -48,6 +51,20 @@ pub fn radix_drag(value: &mut i32, format: Format, width: u32) -> egui::DragValu
     egui::DragValue::new(value)
         .custom_formatter(move |number, _| format.text(number as i32, width))
         .custom_parser(move |text| format.parse(text).map(f64::from))
+}
+
+// A field for a number as the machine stores it: a whole word in its radix, so on MARIE FFFF is
+// typed for -1. `word` is format.word() of the number; format.value() of it is the new number.
+pub fn word_drag(word: &mut i32, format: Format, values: RangeInclusive<i32>) -> egui::DragValue<'_> {
+    let words = match format.data_encoding {
+        DataEncoding::TwosComplement => 0..=0xffff,
+        DataEncoding::Unsigned | DataEncoding::Lmc => values,
+    };
+
+    radix_drag(word, format, format.code_digits + format.operand_digits)
+        .range(words)
+        // -1 can be typed as well as FFFF.
+        .custom_parser(move |text| format.parse(text).map(|number| f64::from(format.word(number))))
 }
 
 pub fn listing(steps: &[MicroOp]) -> String {

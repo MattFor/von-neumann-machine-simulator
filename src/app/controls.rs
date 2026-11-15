@@ -1,8 +1,9 @@
 use egui::{Key, KeyboardShortcut, Modifiers, Ui};
 use std::time::Instant;
 
-use super::gui_state::{AppState, MAX_SPEED, MIN_SPEED};
+use super::gui_state::{AppState, MAX_SPEED, MIN_SPEED, PRESETS, preset_of};
 use crate::gui::action;
+use crate::program::examples;
 
 const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O);
 const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
@@ -32,13 +33,21 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             state.save_program();
         }
 
-        if ui
-            .button("Example")
-            .on_hover_text("Load a small example program")
-            .clicked()
-        {
-            state.load_example();
-        }
+        ui.menu_button("Example", |ui| {
+            for example in examples() {
+                let machine = preset_of(&example.preset).map_or("its", |preset| PRESETS[preset].0);
+
+                if ui
+                    .button(example.name)
+                    .on_hover_text(format!("Load this program on the {machine} machine"))
+                    .clicked()
+                {
+                    state.load(example.program);
+                }
+            }
+        })
+        .response
+        .on_hover_text("Load a small example program, each on its own machine");
 
         ui.separator();
 

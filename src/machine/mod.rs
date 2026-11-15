@@ -260,7 +260,9 @@ impl Machine {
     }
 
     pub fn current_instruction(&self) -> String {
-        self.describe(self.memory.read(self.address(self.cpu.pc as i32) as usize))
+        let cell = self.memory.read(self.address(self.cpu.pc as i32) as usize);
+
+        self.describe(self.instruction_set.format.fetched(cell))
     }
 
     pub fn describe(&self, raw: i32) -> String {
@@ -665,7 +667,7 @@ mod tests {
         let set = InstructionSet::from_mc("mine", &lines.join("\r\n")).unwrap();
 
         assert_eq!(set.format, Format::johnny());
-        assert_eq!(set.mnemonic(1), "TAKE");
+        assert_eq!(set.mnemonic_for(1, 0), "TAKE");
         assert_eq!(set.steps(1), Opcode::Load.micro());
         assert!(set.find(2).is_none());
     }
@@ -1017,6 +1019,27 @@ mod tests {
         machine.run_steps(2);
 
         assert_eq!(machine.cpu.acc, i16::MAX as i32);
+    }
+
+    #[test]
+    fn the_fetched_word_of_a_cell_is_what_the_fetch_leaves_in_the_instruction_register() {
+        for preset in InstructionSet::presets() {
+            for cell in [0, 5, 902, -1, -999, 1500, 0x8400, 0xffff, 70_000] {
+                let mut machine = machine_with(&[cell]);
+                machine.instruction_set = preset.clone();
+
+                for op in FETCH {
+                    machine.manual(op);
+                }
+
+                assert_eq!(
+                    machine.cpu.ir as i32,
+                    preset.format.fetched(cell),
+                    "{} {cell}",
+                    preset.name
+                );
+            }
+        }
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

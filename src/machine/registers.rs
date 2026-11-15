@@ -1,11 +1,6 @@
 const VALUE_MIN: i32 = 0;
 const VALUE_MAX: i32 = 19_999;
 
-// The default unsigned data bus range. Machine applies each format's signed encoding before
-// values reach the bus, leaving the existing presets with their original clamp.
-const MBR_MIN: i32 = VALUE_MIN;
-const MBR_MAX: i32 = 0xffff; // a whole word, so that instructions fit through the data bus
-
 // The accumulator range of the presets; a format can set its own.
 pub const ACC_MIN: i32 = VALUE_MIN;
 pub const ACC_MAX: i32 = VALUE_MAX;
@@ -32,9 +27,5 @@ impl Registers {
 
     pub fn reset(&mut self) {
         *self = Self::new();
-    }
-
-    pub fn set_mbr(&mut self, value: i32) {
-        self.mbr = value.clamp(MBR_MIN, MBR_MAX);
     }
 }

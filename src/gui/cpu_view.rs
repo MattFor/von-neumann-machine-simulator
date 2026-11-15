@@ -1,30 +1,32 @@
 use egui::Ui;
 
-use super::micro_buttons;
+use super::{micro_buttons, radix_drag, word_drag};
 use crate::machine::{Machine, MicroOp};
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("CPU");
 
+    let format = machine.instruction_set.format;
+
     ui.horizontal_wrapped(|ui| {
         ui.label("Program Counter");
 
-        let mut pc = machine.cpu.pc;
-        let last = (machine.instruction_set.format.cells() - 1) as u16;
+        let mut pc = machine.cpu.pc as i32;
+        let last = format.cells() as i32 - 1;
 
         if ui
-            .add(egui::DragValue::new(&mut pc).range(0..=last))
+            .add(radix_drag(&mut pc, format, format.operand_digits).range(0..=last))
             .on_hover_text("Address of the next instruction; drag or double-click to change it")
             .changed()
         {
-            machine.cpu.pc = pc;
+            machine.cpu.pc = pc as u16;
         }
 
         if ui
             .button("Set as entry point")
             .on_hover_text(format!(
                 "Reset will start the program here instead of at {}",
-                machine.entry_point
+                format.operand_text(machine.entry_point as i32)
             ))
             .clicked()
         {
@@ -35,18 +37,17 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {
         ui.label("Accumulator");
 
-        let mut acc = machine.cpu.acc;
-        let format = machine.instruction_set.format;
+        let acc = machine.cpu.acc;
+        let mut word = format.word(acc);
 
         if ui
-            .add(
-                egui::DragValue::new(&mut acc)
-                    .range(format.acc_min..=format.acc_max),
-            )
-            .on_hover_text("Where all arithmetic happens; drag or double-click to change it")
+            .add(word_drag(&mut word, format, format.acc_min..=format.acc_max))
+            .on_hover_text(format!(
+                "Where all arithmetic happens, {acc} in decimal; drag or double-click to change it"
+            ))
             .changed()
         {
-            machine.set_acc(acc);
+            machine.set_acc(format.value(word));
         }
 
         // The zero lamp: said in words too, not only by colour.

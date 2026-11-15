@@ -25,37 +25,49 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             ui.end_row();
 
             let (cpu, old) = (&machine.cpu, &machine.previous);
+            let word = format.code_digits + format.operand_digits;
 
-            for (name, description, value, previous) in [
+            // Numbers are shown in the radix as the word that holds them, so -1 is FFFF on MARIE.
+            for (name, description, value, previous, shown, digits) in [
                 (
                     "ACC",
                     "Accumulator: where all arithmetic happens",
                     cpu.acc,
                     old.acc,
+                    format.word(cpu.acc),
+                    word,
                 ),
                 (
                     "PC",
                     "Program counter: address of the next instruction",
                     cpu.pc as i32,
                     old.pc as i32,
+                    cpu.pc as i32,
+                    format.operand_digits,
                 ),
                 (
                     "IR",
                     "Instruction register: the instruction being carried out",
                     cpu.ir as i32,
                     old.ir as i32,
+                    cpu.ir as i32,
+                    word,
                 ),
                 (
                     "MAR",
                     "Memory address register: the address bus, it picks a memory cell",
                     cpu.mar as i32,
                     old.mar as i32,
+                    cpu.mar as i32,
+                    format.operand_digits,
                 ),
                 (
                     "MBR",
                     "Memory buffer register: the data bus, it carries a value to or from memory",
                     cpu.mbr,
                     old.mbr,
+                    format.word(cpu.mbr),
+                    word,
                 ),
             ] {
                 // Registers the last step changed stand out.
@@ -69,9 +81,7 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
                 ui.monospace(name).on_hover_text(description);
                 ui.label(text(format!("{value}")));
                 if radix {
-                    ui.label(text(
-                        format.text(value, format.code_digits + format.operand_digits),
-                    ));
+                    ui.label(text(format.text(shown, digits)));
                 }
 
                 ui.end_row();

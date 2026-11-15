@@ -1,33 +1,54 @@
-use egui::{Align2, Button, Color32, FontId, Pos2, Rect, Sense, Shape, Stroke, Ui, pos2, vec2};
+use egui::{Align2, Button, Color32, FontId, Pos2, Rect, Shape, Stroke, Ui, pos2, vec2};
 
+use super::word_drag;
 use crate::machine::{Machine, MicroOp};
 
-const COLUMN_COUNT: usize = 12;
 const TRANSFER_HEIGHT: f32 = 56.0;
 const BUS_HEIGHT: f32 = 32.0;
 const ARROW_HEAD_HEIGHT: f32 = 12.0;
+const ARROW_PITCH: f32 = 90.0; // room for a button label
 
 pub const HEIGHT: f32 = TRANSFER_HEIGHT + BUS_HEIGHT;
 
+// Each transfer sits on an arrow right under the card it reaches: the memory's under `memory`, the
+// accumulator's under `acc`. Both are this frame's card rectangles, None when the card is hidden.
+pub fn transfers(rect: Rect, memory: Option<Rect>, acc: Option<Rect>) -> Vec<(MicroOp, Rect)> {
+    let top = rect.top() + TRANSFER_HEIGHT / 2.0;
+    let mut cells = Vec::new();
+
+    for (card, ops) in [
+        (memory, [MicroOp::RamToDb, MicroOp::DbToRam]),
+        (acc, [MicroOp::AccToDb, MicroOp::DbToAcc]),
+    ] {
+        let Some(card) = card else {
+            continue;
+        };
+
+        let pitch = (card.width() / 2.0).min(ARROW_PITCH);
+
+        for (index, op) in ops.into_iter().enumerate() {
+            let center = pos2(card.center().x + (index as f32 - 0.5) * pitch, top);
+
+            cells.push((op, Rect::from_center_size(center, vec2(pitch, TRANSFER_HEIGHT))));
+        }
+    }
+
+    cells
+}
+
 // With `by_hand` the transfers get their buttons and the bus value can be edited.
-pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: bool, by_hand: bool) {
-    let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), HEIGHT), Sense::hover());
-    let transfers = Rect::from_min_size(rect.min, vec2(rect.width(), TRANSFER_HEIGHT));
+pub fn show(
+    ui: &mut Ui,
+    rect: Rect,
+    machine: &mut Machine,
+    memory: Option<Rect>,
+    acc: Option<Rect>,
+    by_hand: bool,
+) {
     let color = ui.visuals().selection.bg_fill;
     let ink = ui.visuals().selection.stroke.color;
 
-    // Memory hangs on the left of the bus, the CPU on the right.
-    for (shown, column, op) in [
-        (show_memory, 2, MicroOp::RamToDb),
-        (show_memory, 3, MicroOp::DbToRam),
-        (show_cpu, 10, MicroOp::AccToDb),
-        (show_cpu, 11, MicroOp::DbToAcc),
-    ] {
-        if !shown {
-            continue;
-        }
-
-        let cell = transfer_cell(transfers, column);
+    for (op, cell) in transfers(rect, memory, acc) {
         let onto_bus = matches!(op, MicroOp::RamToDb | MicroOp::AccToDb);
 
         ui.painter().add(arrow(cell, onto_bus, color));
@@ -46,11 +67,15 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
         }
     }
 
-    let bus = Rect::from_min_max(pos2(rect.left(), transfers.bottom()), rect.max);
-    let field = Rect::from_center_size(bus.center(), vec2(70.0, 22.0));
-    let value = machine.cpu.mbr;
+    let bus = Rect::from_min_max(pos2(rect.left(), rect.top() + TRANSFER_HEIGHT), rect.max);
     let format = machine.instruction_set.format;
-    let word = format.text(value, format.code_digits + format.operand_digits);
+    let digits = format.code_digits + format.operand_digits;
+    let value = machine.cpu.mbr;
+    let mut word = format.word(value);
+    let field = Rect::from_center_size(
+        bus.center(),
+        vec2((digits as f32 * 9.0 + 16.0).max(70.0), 22.0),
+    );
 
     ui.painter().rect_filled(bus, 6.0, color);
 
@@ -63,11 +88,10 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
         (
             field.right_center() + vec2(12.0, 0.0),
             Align2::LEFT_CENTER,
-            // The decimal value is in the field already.
+            // The field shows the word in the radix; in decimal it is the number already.
             match format.radix {
                 10 => String::new(),
-                16 => format!("0x{word}"),
-                radix => format!("{word} in base {radix}"),
+                _ => format!("= {value}"),
             },
         ),
         (
@@ -76,7 +100,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
             if by_hand {
                 String::new()
             } else {
-                value.to_string()
+                format.text(word, digits)
             },
         ),
     ] {
@@ -84,38 +108,16 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
             .text(anchor, align, text, FontId::monospace(14.0), ink);
     }
 
-    if by_hand {
-        let mut value = value;
-        let max_word = machine.instruction_set.limits().2;
-
-        if ui
-            .put(
-                field,
-                egui::DragValue::new(&mut value)
-                    .range(0..=max_word)
-                    .clamp_existing_to_range(false),
-            )
-            .on_hover_text("The value on the data bus; drag or double-click to set it by hand")
+    if by_hand
+        && ui
+            .put(field, word_drag(&mut word, format, machine.instruction_set.values()))
+            .on_hover_text(format!(
+                "The word on the data bus, {value} in decimal; drag or double-click to set it by hand"
+            ))
             .changed()
-        {
-            machine.cpu.set_mbr(value);
-        }
+    {
+        machine.set_data_bus(format.value(word));
     }
-}
-
-// Counted in from the nearer edge, and never narrower than a button label.
-fn transfer_cell(grid: Rect, column: usize) -> Rect {
-    let pitch = (grid.width() / COLUMN_COUNT as f32).max(84.0);
-    let center = if column <= COLUMN_COUNT / 2 {
-        grid.left() + (column as f32 - 0.5) * pitch
-    } else {
-        grid.right() - (COLUMN_COUNT as f32 + 0.5 - column as f32) * pitch
-    };
-
-    Rect::from_center_size(
-        pos2(center, grid.center().y),
-        vec2(pitch.min(90.0), grid.height()),
-    )
 }
 
 fn arrow(cell: Rect, down: bool, color: Color32) -> Shape {
@@ -151,4 +153,47 @@ fn arrow_head(tip: Pos2, half_width: f32, shoulder: f32, color: Color32) -> Shap
         color,
         Stroke::NONE,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::machine::{FETCH, InstructionSet};
+
+    fn marie() -> Machine {
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::marie();
+
+        machine
+    }
+
+    #[test]
+    fn ffff_typed_on_the_marie_data_bus_reaches_the_accumulator_as_minus_one() {
+        let mut machine = marie();
+        let format = machine.instruction_set.format;
+
+        // What the field's parser, then its change, do with the typed text.
+        for text in ["FFFF", "-1"] {
+            let word = format.word(format.parse(text).unwrap());
+            machine.set_data_bus(format.value(word));
+            machine.manual(MicroOp::DbToAcc);
+
+            assert_eq!(machine.cpu.acc, -1, "{text}");
+        }
+    }
+
+    #[test]
+    fn a_fetched_marie_word_shows_as_its_hex_word() {
+        let mut machine = marie();
+        machine.memory.write(0, 0x8400);
+
+        for op in FETCH {
+            machine.manual(op);
+        }
+
+        let format = machine.instruction_set.format;
+
+        assert_eq!(machine.cpu.mbr, -0x7c00);
+        assert_eq!(format.text(format.word(machine.cpu.mbr), 4), "8400");
+    }
 }
