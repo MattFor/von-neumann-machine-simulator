@@ -176,7 +176,7 @@ Files ending in `.mas` are MARIE's own assembly. They are always read in MARIE's
 mnemonics, whatever machine is loaded, and opening one switches to MARIE. Saving
 a MARIE program under `.mas` writes one.
 
-## Command line
+### Command line
 
 `run` runs a program without the window and prints its output, one value per line:
 
