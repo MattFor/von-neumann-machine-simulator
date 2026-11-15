@@ -10,9 +10,10 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         ui.label("Program Counter");
 
         let mut pc = machine.cpu.pc;
+        let last = machine.instruction_set.limits().1 as u16;
 
         if ui
-            .add(egui::DragValue::new(&mut pc))
+            .add(egui::DragValue::new(&mut pc).range(0..=last))
             .on_hover_text("Address of the next instruction; drag or double-click to change it")
             .changed()
         {

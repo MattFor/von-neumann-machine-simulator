@@ -1,6 +1,6 @@
 use egui::Ui;
 
-use crate::machine::{MEMORY_SIZE, Machine};
+use crate::machine::Machine;
 use crate::utilities::parse_value;
 
 const HIGHLIGHT_DARK: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
@@ -79,9 +79,11 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
                 "Put this address (decimal or 0x hex) on the address bus; ram->db and db->ram work on that cell",
             );
 
+        let last = machine.instruction_set.limits().1;
+
         if (button.clicked() || enter)
-            && let Some(parsed_address) = parse_value(&address_bus)
-                .filter(|address| (0..MEMORY_SIZE as i32).contains(address))
+            && let Some(parsed_address) =
+                parse_value(&address_bus).filter(|address| (0..=last).contains(address))
         {
             machine.cpu.mar = parsed_address as u16;
             ui.data_mut(|data| data.insert_temp(egui::Id::new(SCROLL_TO), parsed_address as usize));

@@ -33,10 +33,10 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
         }
 
         MicroOp::PcToAb => machine.cpu.mar = machine.cpu.pc,
-        MicroOp::PcInc => machine.cpu.pc = machine.cpu.pc.wrapping_add(1),
+        MicroOp::PcInc => next_pc(machine),
         MicroOp::PcIncIfZero => {
             if acc == 0 {
-                machine.cpu.pc = machine.cpu.pc.wrapping_add(1);
+                next_pc(machine);
             }
         }
 
@@ -68,4 +68,20 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
         MicroOp::Output => machine.print(&format!("{acc}\n")),
         MicroOp::Stop => machine.halted = true,
     }
+}
+
+// Only the cells an operand reaches exist: Johnny stays on its last one, like the Johnny
+// simulator, the standard machine wraps round to 0.
+fn next_pc(machine: &mut Machine) {
+    let set = &machine.instruction_set;
+    let last = set.limits().1 as u16;
+    let pc = machine.cpu.pc;
+
+    machine.cpu.pc = if pc < last {
+        pc + 1
+    } else if set.johnny {
+        last
+    } else {
+        0
+    };
 }

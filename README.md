@@ -14,14 +14,16 @@ The app starts in a simple view: memory, registers and the data bus. **Advanced*
 view switches. **Johnny mode** next to it makes the machine work like the
 [Johnny simulator](https://github.com/Laubersheini/johnny).
 
-| Key      | Action             |
-| -------- | ------------------ |
-| `F5`     | Run / pause        |
-| `F10`    | Step               |
-| `F11`    | Micro step         |
-| `Ctrl+R` | Reset the CPU      |
-| `Ctrl+O` | Open a program     |
-| `Ctrl+S` | Save the program   |
+| Key      | Action                            |
+| -------- | --------------------------------- |
+| `F5`     | Run / pause                       |
+| `F10`    | Step                              |
+| `F11`    | Micro step (control unit visible) |
+| `Ctrl+R` | Reset the CPU                     |
+| `Ctrl+O` | Open a program                    |
+| `Ctrl+S` | Save the program                  |
+
+The keys work on the Machine tab.
 
 - **Memory**: each cell is a 16-bit word, the high byte is the instruction code and
   the low byte is the operand. Edit a cell through its instruction, its operand or
@@ -70,7 +72,9 @@ between launches.
 | 0E   | TST   | `ACC = mem[operand]`, skip the next instruction if it is 0 |
 | FF   | HALT  | Stop                                        |
 
-The accumulator is kept between 0 and 19999.
+The accumulator is kept between 0 and 19999. An operand reaches 256 cells (1000 in Johnny
+mode); after the last one the program counter goes back to 0, in Johnny mode it stays on
+999 like in Johnny.
 
 Every instruction is a list of micro steps (`ins->ab`, `ram->db`, `db->acc`, ...) that
 runs after the fetch (`pc->ab`, `ram->db`, `db->ins`, `ins->mc`). The Guide tab and the

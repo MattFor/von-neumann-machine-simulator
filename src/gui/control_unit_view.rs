@@ -114,16 +114,20 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
             )
             .clicked()
         {
-            match machine.recording.take() {
-                None => machine.recording = Some(Vec::new()),
+            let free = machine.instruction_set.free_code();
 
-                Some(micro) if micro.is_empty() => {
+            match (machine.recording.take(), free) {
+                (None, _) => machine.recording = Some(Vec::new()),
+
+                (Some(micro), _) if micro.is_empty() => {
                     message = Some("Nothing recorded".to_string());
                 }
 
-                Some(micro) => {
-                    let code = machine.instruction_set.free_code();
+                (Some(_), None) => {
+                    message = Some("No free code left, nothing recorded".to_string());
+                }
 
+                (Some(micro), Some(code)) => {
                     message = Some(format!(
                         "Recorded {name} as instruction {}",
                         machine.instruction_set.digits(code, 2, 2)

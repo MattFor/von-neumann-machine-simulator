@@ -21,7 +21,8 @@ const SECTIONS: [(&str, &str); 9] = [
          shown in hex: the high byte is the code, the low byte the operand. In Johnny mode it \
          is a decimal number instead: two digits of code, then three of operand.\n\n\
          ACC is the accumulator, where all arithmetic happens. It stays between 0 and 19999.\n\
-         PC is the program counter, the address of the next instruction.\n\
+         PC is the program counter, the address of the next instruction. After the last cell \
+         it goes back to 0; in Johnny mode it stays on 999, like in Johnny.\n\
          IR is the instruction register, the instruction being carried out.\n\
          MAR is the address bus, it picks a memory cell.\n\
          MBR is the data bus, it carries a value between the memory and the CPU. It is the \

@@ -84,9 +84,15 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
 
     if by_hand {
         let mut value = value;
+        let max_word = machine.instruction_set.limits().2;
 
         if ui
-            .put(field, egui::DragValue::new(&mut value).range(0..=0xffff))
+            .put(
+                field,
+                egui::DragValue::new(&mut value)
+                    .range(0..=max_word)
+                    .clamp_existing_to_range(false),
+            )
             .on_hover_text("The value on the data bus; drag or double-click to set it by hand")
             .changed()
         {

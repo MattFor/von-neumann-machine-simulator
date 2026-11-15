@@ -238,6 +238,23 @@ mod tests {
     }
 
     #[test]
+    fn program_counter_stays_inside_the_cells_of_its_mode() {
+        let mut machine = Machine::new();
+        machine.cpu.pc = 255;
+
+        machine.step();
+
+        assert_eq!(machine.cpu.pc, 0);
+
+        machine.instruction_set = InstructionSet::johnny();
+        machine.cpu.pc = 999;
+
+        machine.step();
+
+        assert_eq!(machine.cpu.pc, 999);
+    }
+
+    #[test]
     fn accumulator_stays_clamped_on_multiply() {
         let mut program = vec![word(1, 10), word(5, 255), word(5, 255)];
         program.resize(11, 0);

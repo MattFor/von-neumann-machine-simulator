@@ -25,15 +25,17 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
         ui.separator();
 
-        if ui
-            .button("Add Instruction")
-            .on_hover_text("Add an instruction under the next free code")
-            .clicked()
-        {
-            let set = &mut state.machine.instruction_set;
+        let free = state.machine.instruction_set.free_code();
 
-            set.definitions.push(Definition {
-                code: set.free_code(),
+        if ui
+            .add_enabled(free.is_some(), egui::Button::new("Add Instruction"))
+            .on_hover_text("Add an instruction under the next free code")
+            .on_disabled_hover_text("Every code is taken")
+            .clicked()
+            && let Some(code) = free
+        {
+            state.machine.instruction_set.definitions.push(Definition {
+                code,
                 ..Default::default()
             });
         }

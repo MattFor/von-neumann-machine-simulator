@@ -3,6 +3,8 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::utilities::read_text;
+
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Opcode {
     #[default]
@@ -358,10 +360,8 @@ impl InstructionSet {
         }
     }
 
-    pub fn free_code(&self) -> i32 {
-        (0..=self.limits().0)
-            .find(|code| self.find(*code).is_none())
-            .unwrap_or(0)
+    pub fn free_code(&self) -> Option<i32> {
+        (0..=self.limits().0).find(|code| self.find(*code).is_none())
     }
 
     pub fn mnemonic(&self, code: i32) -> String {
@@ -372,15 +372,35 @@ impl InstructionSet {
     }
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {
-        let text = fs::read_to_string(path)?;
+        let text = read_text(path)?;
 
-        if path.extension().is_some_and(|extension| extension == "mc") {
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("mc"))
+        {
             let name = path.file_stem().unwrap_or_default().to_string_lossy();
 
             return Self::from_mc(&name, &text);
         }
 
-        Ok(serde_json::from_str(&text)?)
+        let set: Self = serde_json::from_str(&text)?;
+        set.check()?;
+
+        Ok(set)
+    }
+
+    // The editor clamps a code out of range, which could make it hide another instruction.
+    pub fn check(&self) -> anyhow::Result<()> {
+        let max = self.limits().0;
+
+        anyhow::ensure!(
+            self.definitions
+                .iter()
+                .all(|definition| (0..=max).contains(&definition.code)),
+            "instruction codes must be between 0 and {max}"
+        );
+
+        Ok(())
     }
 
     // A Johnny microcode file: 200 micro step numbers, ten per instruction code, then the names.
@@ -394,7 +414,13 @@ impl InstructionSet {
 
             // A long instruction may run on into the next block.
             for line in lines.iter().take(200).skip(code * 10) {
-                let Some(op) = MicroOp::from_johnny(line.parse()?) else {
+                // Blank reads as 0, like in a .ram file.
+                let id = match *line {
+                    "" => 0,
+                    line => line.parse()?,
+                };
+
+                let Some(op) = MicroOp::from_johnny(id) else {
                     break;
                 };
 
@@ -511,5 +537,57 @@ impl Default for InstructionSet {
                 (255, "HALT", Opcode::Halt),
             ],
         )
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn load(name: &str, text: &str) -> anyhow::Result<InstructionSet> {
+        let path = std::env::temp_dir().join(format!("vnm-test-{name}"));
+        fs::write(&path, text).unwrap();
+
+        let set = InstructionSet::load(&path);
+        fs::remove_file(&path).unwrap();
+
+        set
+    }
+
+    #[test]
+    fn set_files_with_codes_out_of_range_are_refused() {
+        let text = r#"{"name":"s","johnny":true,
+            "definitions":[{"code":255,"mnemonic":"HLT","opcode":"Halt"}]}"#;
+
+        assert!(load("set.json", text).is_err());
+    }
+
+    #[test]
+    fn upper_case_mc_files_are_read_as_microcode() {
+        assert!(load("upper.MC", &"0\r\n".repeat(200)).unwrap().johnny);
+    }
+
+    #[test]
+    fn blank_lines_in_a_microcode_file_read_as_zero() {
+        let mut lines = vec![""; 200];
+        lines[10..15].copy_from_slice(&["4", "2", "18", "9", "7"]);
+
+        let set = InstructionSet::from_mc("blank", &lines.join("\r\n")).unwrap();
+
+        assert_eq!(set.steps(1), Opcode::Load.micro());
+    }
+
+    #[test]
+    fn a_full_set_has_no_free_code() {
+        let mut set = InstructionSet::johnny();
+
+        for code in 11..=19 {
+            set.definitions.push(Definition {
+                code,
+                ..Default::default()
+            });
+        }
+
+        assert_eq!(set.free_code(), None);
     }
 }
