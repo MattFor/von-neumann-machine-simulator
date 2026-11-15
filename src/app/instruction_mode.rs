@@ -40,27 +40,25 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             });
         }
 
-        let presets: [(_, _, fn() -> InstructionSet); 3] = [
+        // In the order of InstructionSet::presets.
+        let buttons = [
             (
                 "Restore Default",
                 "Standard mode with the built-in instruction set",
-                InstructionSet::default,
             ),
             (
                 "Johnny",
                 "Johnny mode with the instructions of the Johnny simulator: TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL, HLT",
-                InstructionSet::johnny,
             ),
             (
                 "Bonsai",
                 "Johnny mode with its minimal set: INC, DEC, JMP, TST, HLT",
-                InstructionSet::bonsai,
             ),
         ];
 
-        for (label, hint, preset) in presets {
+        for ((label, hint), preset) in buttons.into_iter().zip(InstructionSet::presets()) {
             if ui.button(label).on_hover_text(hint).clicked() {
-                state.use_set(preset());
+                state.use_set(preset);
             }
         }
     });

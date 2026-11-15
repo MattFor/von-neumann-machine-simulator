@@ -194,10 +194,17 @@ impl eframe::App for VnmApp {
             if self.state.machine.run_steps(steps) {
                 self.state.running = false;
                 let machine = &self.state.machine;
+                let pc = machine.cpu.pc;
 
+                // Off a breakpoint, the format stopped it on an instruction that kept the pc.
                 self.state.status_message = format!(
-                    "Breakpoint at {}",
-                    machine.instruction_set.digits(machine.cpu.pc as i32, 4, 3)
+                    "{} at {}",
+                    if machine.breakpoints.contains(&pc) {
+                        "Breakpoint"
+                    } else {
+                        "Stopped"
+                    },
+                    machine.instruction_set.format.operand_text(pc as i32)
                 );
             }
 

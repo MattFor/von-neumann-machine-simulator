@@ -99,10 +99,12 @@ impl Program {
 
     pub fn save(&self, path: &Path) -> anyhow::Result<()> {
         let text = if is_ram(path) {
-            // Johnny reads the words as decimal, so a standard program would come back as another.
+            // Johnny reads decimal words, so another format would come back as another program.
             anyhow::ensure!(
-                self.instruction_set.as_ref().is_none_or(|set| set.johnny),
-                "only a Johnny mode program can be saved as .ram"
+                self.instruction_set
+                    .as_ref()
+                    .is_none_or(|set| set.format.johnny_compatible()),
+                "a .ram file holds Johnny's words: radix 10, 2 code digits and 3 operand digits"
             );
 
             self.to_ram()
@@ -131,6 +133,7 @@ impl Program {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::machine::{Format, PcOverflow};
 
     // A file of its own per test, since tests run in parallel.
     fn load(name: &str, text: &str) -> anyhow::Result<Program> {
@@ -190,6 +193,66 @@ mod tests {
             .save(&path)
             .unwrap();
         fs::remove_file(&path).unwrap();
+    }
+
+    #[test]
+    fn ram_files_need_a_johnny_compatible_format() {
+        let path = std::env::temp_dir().join("vnm-test-compatible.ram");
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::johnny();
+        machine.instruction_set.format.pc_overflow = PcOverflow::Halt;
+
+        Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap();
+        fs::remove_file(&path).unwrap();
+
+        machine.instruction_set.format.radix = 8;
+        let error = Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap_err();
+
+        assert!(error.to_string().contains("radix 10"));
+    }
+
+    #[test]
+    fn programs_from_before_the_format_load_by_their_johnny_switch() {
+        let text = r#"{"name":"x","entry_point":0,"memory":[1010],"instruction_set":
+            {"name":"Johnny","johnny":true,"definitions":[]}}"#;
+        let program = load("old-program.json", text).unwrap();
+
+        assert_eq!(program.instruction_set.unwrap().format, Format::johnny());
+    }
+
+    #[test]
+    fn a_saved_program_keeps_its_format() {
+        let path = std::env::temp_dir().join("vnm-test-format.json");
+        let mut machine = Machine::new();
+        machine.instruction_set.format = Format {
+            radix: 8,
+            code_digits: 1,
+            operand_digits: 3,
+            acc_min: -999,
+            pc_overflow: PcOverflow::Halt,
+            ..Format::default()
+        };
+        machine
+            .instruction_set
+            .definitions
+            .retain(|definition| definition.code < 8);
+
+        Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let program = Program::load(&path).unwrap();
+        fs::remove_file(&path).unwrap();
+
+        assert!(text.contains(r#""radix": 8"#));
+        assert_eq!(
+            program.instruction_set.unwrap().format,
+            machine.instruction_set.format
+        );
     }
 
     #[test]

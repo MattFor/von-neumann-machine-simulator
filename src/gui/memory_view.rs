@@ -1,5 +1,6 @@
 use egui::Ui;
 
+use super::radix_drag;
 use crate::machine::Machine;
 use crate::utilities::parse_value;
 
@@ -79,7 +80,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
                 "Put this address (decimal or 0x hex) on the address bus; ram->db and db->ram work on that cell",
             );
 
-        let last = machine.instruction_set.limits().1;
+        let last = machine.instruction_set.format.cells() as i32 - 1;
 
         if (button.clicked() || enter)
             && let Some(parsed_address) =
@@ -96,8 +97,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
     let set = machine.instruction_set.clone();
     let (_, max_operand, max_word) = set.limits();
-    // As far as an operand can reach.
-    let cells = max_operand as usize + 1;
+    let cells = set.format.cells();
     let column_width = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0; // 4 columns, 3 gaps
 
     egui::Grid::new("memory_header")
@@ -162,7 +162,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                         let (mut code, mut operand) = set.split(raw);
                         let unchanged = set.join(code, operand);
                         let mut value = raw;
-                        let shown_address = set.digits(address as i32, 4, 3);
+                        let shown_address = set.format.operand_text(address as i32);
 
                         let breakpoint = machine.breakpoints.contains(&(address as u16));
                         let label = if breakpoint {
@@ -192,7 +192,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                             .selected_text(set.mnemonic(code))
                             .show_ui(ui, |ui| {
                                 for definition in &set.definitions {
-                                    let shown_code = set.digits(definition.code, 2, 2);
+                                    let shown_code = set.format.code_text(definition.code);
                                     let response = ui.selectable_value(
                                         &mut code,
                                         definition.code,
@@ -215,13 +215,8 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
 
                         ui.add_sized(
                             [column_width, row_height],
-                            if set.johnny {
-                                egui::DragValue::new(&mut operand).range(0..=max_operand)
-                            } else {
-                                egui::DragValue::new(&mut operand)
-                                    .range(0..=max_operand)
-                                    .hexadecimal(2, false, true)
-                            },
+                            radix_drag(&mut operand, set.format, set.format.operand_digits)
+                                .range(0..=max_operand),
                         );
 
                         ui.add_sized(

@@ -49,6 +49,8 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
     let bus = Rect::from_min_max(pos2(rect.left(), transfers.bottom()), rect.max);
     let field = Rect::from_center_size(bus.center(), vec2(70.0, 22.0));
     let value = machine.cpu.mbr;
+    let format = machine.instruction_set.format;
+    let word = format.text(value, format.code_digits + format.operand_digits);
 
     ui.painter().rect_filled(bus, 6.0, color);
 
@@ -61,11 +63,11 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, show_memory: bool, show_cpu: boo
         (
             field.right_center() + vec2(12.0, 0.0),
             Align2::LEFT_CENTER,
-            // Hex means nothing to a Johnny program.
-            if machine.instruction_set.johnny {
-                String::new()
-            } else {
-                format!("0x{value:04X}")
+            // The decimal value is in the field already.
+            match format.radix {
+                10 => String::new(),
+                16 => format!("0x{word}"),
+                radix => format!("{word} in base {radix}"),
             },
         ),
         (

@@ -1,10 +1,12 @@
 mod executor;
+mod format;
 mod instructions;
 mod memory;
 mod registers;
 
 use std::collections::{HashSet, VecDeque};
 
+pub use format::{Format, PcOverflow, UnknownCode};
 pub use instructions::{Definition, FETCH, InstructionSet, MicroOp, Opcode};
 pub use memory::MEMORY_SIZE;
 pub use registers::{ACC_MAX, ACC_MIN};
@@ -98,6 +100,13 @@ impl Machine {
         self.waiting = false;
     }
 
+    // Not clamp(), which panics on a format whose minimum is above its maximum.
+    pub fn set_acc(&mut self, value: i32) {
+        let format = &self.instruction_set.format;
+
+        self.cpu.acc = value.max(format.acc_min).min(format.acc_max);
+    }
+
     pub fn print(&mut self, text: &str) {
         self.output.push_str(text);
 
@@ -173,17 +182,22 @@ impl Machine {
         self.halted = true;
     }
 
-    // Returns true when it stopped on a breakpoint.
+    // Returns true when it stopped on a breakpoint, or on an instruction that left the program
+    // counter where it was if the format says so.
     pub fn run_steps(&mut self, steps: usize) -> bool {
         for _ in 0..steps {
             if self.halted || self.waiting {
                 break;
             }
 
+            let pc = self.cpu.pc;
+
             self.step();
 
+            let stays = self.instruction_set.format.stop_when_pc_stays && self.cpu.pc == pc;
+
             // Checked after the step, so running from a breakpoint moves past it.
-            if !self.halted && !self.waiting && self.breakpoints.contains(&self.cpu.pc) {
+            if !self.halted && !self.waiting && (stays || self.breakpoints.contains(&self.cpu.pc)) {
                 return true;
             }
         }
@@ -198,16 +212,12 @@ impl Machine {
     pub fn describe(&self, raw: i32) -> String {
         let set = &self.instruction_set;
         let (code, operand) = set.split(raw);
-        let word = if set.johnny {
-            format!("{code:02}.{operand:03}")
-        } else {
-            format!("{:04X}", raw as u16)
-        };
+        let operand = set.format.operand_text(operand);
 
         format!(
-            "{word}  {} {}",
-            set.mnemonic(code),
-            set.digits(operand, 2, 3)
+            "{}.{operand}  {} {operand}",
+            set.format.code_text(code),
+            set.mnemonic(code)
         )
     }
 }
@@ -271,7 +281,7 @@ mod tests {
     fn subtract_does_not_go_below_zero() {
         let mut machine = machine_with(&[word(4, 10)]);
         machine.memory.write(10, 10);
-        machine.cpu.set_acc(5);
+        machine.set_acc(5);
 
         machine.step();
 
@@ -573,10 +583,107 @@ mod tests {
 
         let set = InstructionSet::from_mc("mine", &lines.join("\r\n")).unwrap();
 
-        assert!(set.johnny);
+        assert_eq!(set.format, Format::johnny());
         assert_eq!(set.mnemonic(1), "TAKE");
         assert_eq!(set.steps(1), Opcode::Load.micro());
         assert!(set.find(2).is_none());
+    }
+
+    #[test]
+    fn a_custom_format_runs_its_own_words() {
+        // Octal words: one digit of code, then three of operand.
+        let set: InstructionSet = serde_json::from_str(
+            r#"{"name":"Octal","format":{"radix":8,"code_digits":1,"operand_digits":3},
+                "definitions":[{"code":1,"mnemonic":"LOAD","opcode":"Load"},
+                {"code":2,"mnemonic":"ADD","opcode":"Add"},
+                {"code":3,"mnemonic":"STORE","opcode":"Store"},
+                {"code":4,"mnemonic":"OUT","opcode":"Output"},
+                {"code":7,"mnemonic":"HALT","opcode":"Halt"}]}"#,
+        )
+        .unwrap();
+        let octal = |code: i32, operand: i32| code * 0o1000 + operand;
+
+        set.check().unwrap();
+
+        let mut machine = machine_with(&[
+            octal(1, 0o100),
+            octal(2, 0o101),
+            octal(3, 0o102),
+            octal(4, 0),
+            octal(7, 0),
+        ]);
+        machine.instruction_set = set;
+        machine.memory.write(0o100, 5);
+        machine.memory.write(0o101, 7);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(0o102), 12);
+        assert_eq!(machine.output, "12\n");
+        assert_eq!(machine.instruction_set.limits(), (7, 0o777, 0o7777));
+        assert_eq!(machine.instruction_set.format.cells(), 512);
+        assert_eq!(machine.describe(octal(3, 0o102)), "3.102  STORE 102");
+    }
+
+    #[test]
+    fn a_signed_accumulator_clamps_at_its_negative_minimum() {
+        let mut machine = machine_with(&[word(4, 10), word(4, 10), word(10, 0), word(255, 0)]);
+        machine.instruction_set.format.acc_min = -10;
+        machine.memory.write(10, 7);
+
+        machine.step();
+
+        assert_eq!(machine.cpu.acc, -7);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.cpu.acc, -10);
+        assert_eq!(machine.output, "-10\n");
+    }
+
+    #[test]
+    fn past_the_last_cell_the_program_counter_does_what_the_format_says() {
+        for (overflow, pc, halted) in [
+            (PcOverflow::Wrap, 0, false),
+            (PcOverflow::Stay, 15, false),
+            (PcOverflow::Halt, 15, true),
+        ] {
+            let mut machine = Machine::new();
+            machine.instruction_set.format.cells = Some(16);
+            machine.instruction_set.format.pc_overflow = overflow;
+            machine.cpu.pc = 15;
+
+            machine.step();
+
+            assert_eq!((machine.cpu.pc, machine.halted), (pc, halted), "{overflow:?}");
+        }
+    }
+
+    #[test]
+    fn an_unknown_code_is_skipped_or_halts() {
+        for (unknown, pc, halted) in [(UnknownCode::Nop, 1, false), (UnknownCode::Halt, 0, true)] {
+            let mut machine = machine_with(&[word(200, 0)]);
+            machine.instruction_set.format.unknown_code = unknown;
+
+            machine.step();
+
+            assert_eq!((machine.cpu.pc, machine.halted), (pc, halted), "{unknown:?}");
+        }
+    }
+
+    #[test]
+    fn run_stops_on_an_instruction_that_keeps_the_program_counter_if_the_format_says_so() {
+        let mut machine = machine_with(&[word(7, 0)]);
+
+        assert!(!machine.run_steps(5));
+
+        machine.instruction_set.format.stop_when_pc_stays = true;
+
+        assert!(machine.run_steps(5));
+        assert!(!machine.halted);
+        assert_eq!(machine.cpu.pc, 0);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

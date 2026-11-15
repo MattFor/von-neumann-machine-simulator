@@ -3,6 +3,7 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use super::{Format, UnknownCode};
 use crate::utilities::read_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -303,13 +304,37 @@ impl Definition {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(from = "SavedSet")]
 pub struct InstructionSet {
     pub name: String,
     pub definitions: Vec<Definition>,
+    pub format: Format,
+}
 
-    // Johnny words: decimal, two digits of code then three of operand.
+// Sets saved before there was a format only said whether they were Johnny's.
+#[derive(Deserialize)]
+struct SavedSet {
+    name: String,
+    definitions: Vec<Definition>,
     #[serde(default)]
-    pub johnny: bool,
+    johnny: bool,
+    format: Option<Format>,
+}
+
+impl From<SavedSet> for InstructionSet {
+    fn from(saved: SavedSet) -> Self {
+        let legacy = if saved.johnny {
+            Format::johnny()
+        } else {
+            Format::default()
+        };
+
+        Self {
+            name: saved.name,
+            definitions: saved.definitions,
+            format: saved.format.unwrap_or(legacy),
+        }
+    }
 }
 
 impl InstructionSet {
@@ -319,45 +344,36 @@ impl InstructionSet {
             .find(|definition| definition.code == code)
     }
 
-    // Unknown codes behave like NOP.
     pub fn steps(&self, code: i32) -> &[MicroOp] {
+        let unknown = match self.format.unknown_code {
+            UnknownCode::Nop => Opcode::Nop,
+            UnknownCode::Halt => Opcode::Halt,
+        };
+
         self.find(code)
-            .map_or(Opcode::Nop.micro(), Definition::steps)
+            .map_or(unknown.micro(), Definition::steps)
     }
 
-    // A word is 0x1234 (code 0x12, operand 0x34), or 12.345 for Johnny.
+    // The number of operands, which is also what one code is worth in a word.
+    fn operands(&self) -> i32 {
+        self.format.span(self.format.operand_digits) as i32
+    }
+
+    // A word is code * operands + operand: 0x12.34 on the standard machine, 12.345 on Johnny.
     pub fn split(&self, word: i32) -> (i32, i32) {
-        if self.johnny {
-            (word / 1000, word % 1000)
-        } else {
-            ((word >> 8) & 0xff, word & 0xff)
-        }
+        (word / self.operands(), word % self.operands())
     }
 
     pub fn join(&self, code: i32, operand: i32) -> i32 {
-        if self.johnny {
-            code * 1000 + operand
-        } else {
-            ((code & 0xff) << 8) | (operand & 0xff)
-        }
+        code * self.operands() + operand
     }
 
     // The largest code, operand and word.
     pub fn limits(&self) -> (i32, i32, i32) {
-        if self.johnny {
-            (19, 999, 19_999)
-        } else {
-            (255, 255, 0xffff)
-        }
-    }
+        let format = &self.format;
+        let codes = format.codes.unwrap_or_else(|| format.span(format.code_digits)) as i32;
 
-    // Numbers read as hex, or as decimal for Johnny.
-    pub fn digits(&self, value: i32, hex: usize, decimal: usize) -> String {
-        if self.johnny {
-            format!("{value:0decimal$}")
-        } else {
-            format!("{value:0hex$X}")
-        }
+        (codes - 1, self.operands() - 1, codes * self.operands() - 1)
     }
 
     pub fn free_code(&self) -> Option<i32> {
@@ -366,7 +382,7 @@ impl InstructionSet {
 
     pub fn mnemonic(&self, code: i32) -> String {
         self.find(code).map_or_else(
-            || format!("{} - ?", self.digits(code, 2, 2)),
+            || format!("{} - ?", self.format.code_text(code)),
             |definition| definition.mnemonic.clone(),
         )
     }
@@ -391,6 +407,8 @@ impl InstructionSet {
 
     // The editor clamps a code out of range, which could make it hide another instruction.
     pub fn check(&self) -> anyhow::Result<()> {
+        self.format.check()?;
+
         let max = self.limits().0;
 
         anyhow::ensure!(
@@ -407,7 +425,7 @@ impl InstructionSet {
     // ponytail: the fetch block (code 0) is not read, the fetch here is fixed.
     pub fn from_mc(name: &str, text: &str) -> anyhow::Result<Self> {
         let lines: Vec<&str> = text.lines().map(str::trim).collect();
-        let mut set = Self::preset(name, true, &[(0, "NOP", Opcode::Nop)]);
+        let mut set = Self::preset(name, Format::johnny(), &[(0, "NOP", Opcode::Nop)]);
 
         for code in 1..20 {
             let mut micro = Vec::new();
@@ -458,10 +476,10 @@ impl InstructionSet {
 }
 
 impl InstructionSet {
-    fn preset(name: &str, johnny: bool, table: &[(i32, &str, Opcode)]) -> Self {
+    fn preset(name: &str, format: Format, table: &[(i32, &str, Opcode)]) -> Self {
         Self {
             name: name.to_string(),
-            johnny,
+            format,
 
             definitions: table
                 .iter()
@@ -475,11 +493,16 @@ impl InstructionSet {
         }
     }
 
+    // The built-in sets: standard, Johnny and Bonsai.
+    pub fn presets() -> [Self; 3] {
+        [Self::default(), Self::johnny(), Self::bonsai()]
+    }
+
     // The names and codes of the Johnny simulator.
     pub fn johnny() -> Self {
         Self::preset(
             "Johnny",
-            true,
+            Format::johnny(),
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "TAKE", Opcode::Load),
@@ -500,7 +523,7 @@ impl InstructionSet {
     pub fn bonsai() -> Self {
         Self::preset(
             "Bonsai",
-            true,
+            Format::johnny(),
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "INC", Opcode::Inc),
@@ -517,7 +540,7 @@ impl Default for InstructionSet {
     fn default() -> Self {
         Self::preset(
             "Default",
-            false,
+            Format::default(),
             &[
                 (0, "NOP", Opcode::Nop),
                 (1, "LOAD", Opcode::Load),
@@ -563,8 +586,46 @@ mod tests {
     }
 
     #[test]
+    fn set_files_from_before_the_format_load_by_their_johnny_switch() {
+        for (switch, format) in [
+            (r#","johnny":true"#, Format::johnny()),
+            (r#","johnny":false"#, Format::default()),
+            ("", Format::default()),
+        ] {
+            let text = format!(r#"{{"name":"s"{switch},"definitions":[]}}"#);
+
+            assert_eq!(load("old-set.json", &text).unwrap().format, format, "{switch}");
+        }
+    }
+
+    #[test]
+    fn every_preset_saves_its_format_and_loads_it_back() {
+        for preset in InstructionSet::presets() {
+            let path = std::env::temp_dir().join(format!("vnm-test-preset-{}.json", preset.name));
+
+            preset.save(&path).unwrap();
+            let text = fs::read_to_string(&path).unwrap();
+            let set = InstructionSet::load(&path).unwrap();
+            fs::remove_file(&path).unwrap();
+
+            assert!(text.contains(r#""format": {"#) && !text.contains(r#""johnny""#));
+            assert_eq!(set.format, preset.format);
+        }
+    }
+
+    #[test]
+    fn set_files_with_a_format_the_registers_cannot_hold_are_refused() {
+        let text = r#"{"name":"s","format":{"radix":16,"operand_digits":3},"definitions":[]}"#;
+
+        assert!(load("wide.json", text).is_err());
+    }
+
+    #[test]
     fn upper_case_mc_files_are_read_as_microcode() {
-        assert!(load("upper.MC", &"0\r\n".repeat(200)).unwrap().johnny);
+        assert_eq!(
+            load("upper.MC", &"0\r\n".repeat(200)).unwrap().format,
+            Format::johnny()
+        );
     }
 
     #[test]

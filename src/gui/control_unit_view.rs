@@ -130,7 +130,7 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
                 (Some(micro), Some(code)) => {
                     message = Some(format!(
                         "Recorded {name} as instruction {}",
-                        machine.instruction_set.digits(code, 2, 2)
+                        machine.instruction_set.format.code_text(code)
                     ));
                     machine.instruction_set.definitions.push(Definition {
                         code,

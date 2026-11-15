@@ -10,7 +10,7 @@ pub mod theme;
 
 use egui::{KeyboardShortcut, Ui};
 
-use crate::machine::{Machine, MicroOp};
+use crate::machine::{Format, Machine, MicroOp};
 
 // A button that also fires on its keyboard shortcut.
 pub fn action(
@@ -41,6 +41,13 @@ pub fn micro_buttons(ui: &mut Ui, machine: &mut Machine, ops: &[MicroOp]) {
             }
         }
     });
+}
+
+// A number field that shows and reads the radix of the format, padded to `width` digits.
+pub fn radix_drag(value: &mut i32, format: Format, width: u32) -> egui::DragValue<'_> {
+    egui::DragValue::new(value)
+        .custom_formatter(move |number, _| format.text(number as i32, width))
+        .custom_parser(move |text| format.parse(text).map(f64::from))
 }
 
 pub fn listing(steps: &[MicroOp]) -> String {

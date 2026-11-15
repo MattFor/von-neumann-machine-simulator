@@ -79,7 +79,7 @@ impl Debug {
             return false;
         };
 
-        state.machine.cpu.set_acc(value);
+        state.machine.set_acc(value);
 
         true
     }

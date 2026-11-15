@@ -104,15 +104,16 @@ impl AppState {
         }
     }
 
+    // Johnny mode is any format that reads Johnny's files.
     pub fn johnny(&self) -> bool {
-        self.machine.instruction_set.johnny
+        self.machine.instruction_set.format.johnny_compatible()
     }
 
     // Each mode has its own machine, so switching back and forth loses nothing.
     pub fn toggle_johnny(&mut self) {
         let johnny = self.johnny();
 
-        if self.other.0.instruction_set.johnny == johnny {
+        if self.other.0.instruction_set.format.johnny_compatible() == johnny {
             self.other = (Machine::new(), None);
 
             if !johnny {
@@ -134,7 +135,7 @@ impl AppState {
 
     // A set written for the other mode switches to that mode first.
     pub fn use_set(&mut self, set: InstructionSet) {
-        if set.johnny != self.johnny() {
+        if set.format.johnny_compatible() != self.johnny() {
             self.toggle_johnny();
         }
 
@@ -144,7 +145,7 @@ impl AppState {
 
     fn load(&mut self, program: Program) {
         if let Some(set) = &program.instruction_set
-            && set.johnny != self.johnny()
+            && set.format.johnny_compatible() != self.johnny()
         {
             self.toggle_johnny();
         }

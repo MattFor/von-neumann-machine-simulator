@@ -1,4 +1,4 @@
-use super::{Machine, instructions::MicroOp};
+use super::{Machine, PcOverflow, instructions::MicroOp};
 
 pub fn execute(machine: &mut Machine, op: MicroOp) {
     let operand = machine.instruction_set.split(machine.cpu.ir as i32).1 as u16;
@@ -40,26 +40,26 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
             }
         }
 
-        MicroOp::AccZero => machine.cpu.set_acc(0),
-        MicroOp::AccInc => machine.cpu.set_acc(acc.saturating_add(1)),
-        MicroOp::AccDec => machine.cpu.set_acc(acc.saturating_sub(1)),
-        MicroOp::Plus => machine.cpu.set_acc(acc.saturating_add(mbr)),
-        MicroOp::Minus => machine.cpu.set_acc(acc.saturating_sub(mbr)),
-        MicroOp::Times => machine.cpu.set_acc(acc.saturating_mul(mbr)),
+        MicroOp::AccZero => machine.set_acc(0),
+        MicroOp::AccInc => machine.set_acc(acc.saturating_add(1)),
+        MicroOp::AccDec => machine.set_acc(acc.saturating_sub(1)),
+        MicroOp::Plus => machine.set_acc(acc.saturating_add(mbr)),
+        MicroOp::Minus => machine.set_acc(acc.saturating_sub(mbr)),
+        MicroOp::Times => machine.set_acc(acc.saturating_mul(mbr)),
         MicroOp::Divide => {
             if mbr == 0 {
                 machine.print("error: division by zero\n");
                 machine.halted = true;
             } else {
-                machine.cpu.set_acc(acc / mbr);
+                machine.set_acc(acc / mbr);
             }
         }
 
         MicroOp::AccToDb => machine.cpu.set_mbr(acc),
-        MicroOp::DbToAcc => machine.cpu.set_acc(mbr),
+        MicroOp::DbToAcc => machine.set_acc(mbr),
 
         MicroOp::Input => match machine.input.pop_front() {
-            Some(value) => machine.cpu.set_acc(value),
+            Some(value) => machine.set_acc(value),
 
             // The step is not counted, so it is tried again once a value arrives.
             None => machine.waiting = true,
@@ -70,18 +70,20 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
     }
 }
 
-// Only the cells an operand reaches exist: Johnny stays on its last one, like the Johnny
-// simulator, the standard machine wraps round to 0.
+// Only the cells of the format exist; what comes after the last one is up to the format too.
 fn next_pc(machine: &mut Machine) {
-    let set = &machine.instruction_set;
-    let last = set.limits().1 as u16;
+    let format = machine.instruction_set.format;
+    let last = (format.cells() - 1) as u16;
     let pc = machine.cpu.pc;
 
-    machine.cpu.pc = if pc < last {
-        pc + 1
-    } else if set.johnny {
-        last
-    } else {
-        0
-    };
+    if pc < last {
+        machine.cpu.pc = pc + 1;
+        return;
+    }
+
+    match format.pc_overflow {
+        PcOverflow::Wrap => machine.cpu.pc = 0,
+        PcOverflow::Stay => machine.cpu.pc = last,
+        PcOverflow::Halt => machine.halted = true,
+    }
 }

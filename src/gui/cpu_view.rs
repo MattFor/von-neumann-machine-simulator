@@ -1,7 +1,7 @@
 use egui::Ui;
 
 use super::micro_buttons;
-use crate::machine::{ACC_MAX, ACC_MIN, Machine, MicroOp};
+use crate::machine::{Machine, MicroOp};
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.heading("CPU");
@@ -10,7 +10,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         ui.label("Program Counter");
 
         let mut pc = machine.cpu.pc;
-        let last = machine.instruction_set.limits().1 as u16;
+        let last = (machine.instruction_set.format.cells() - 1) as u16;
 
         if ui
             .add(egui::DragValue::new(&mut pc).range(0..=last))
@@ -36,13 +36,17 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         ui.label("Accumulator");
 
         let mut acc = machine.cpu.acc;
+        let format = machine.instruction_set.format;
 
         if ui
-            .add(egui::DragValue::new(&mut acc).range(ACC_MIN..=ACC_MAX))
+            .add(
+                egui::DragValue::new(&mut acc)
+                    .range(format.acc_min..=format.acc_max),
+            )
             .on_hover_text("Where all arithmetic happens; drag or double-click to change it")
             .changed()
         {
-            machine.cpu.set_acc(acc);
+            machine.set_acc(acc);
         }
 
         // The zero lamp: said in words too, not only by colour.

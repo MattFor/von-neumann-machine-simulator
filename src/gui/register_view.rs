@@ -10,11 +10,16 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
         .show(ui, |ui| {
             ui.label("Reg");
             ui.label("Dec");
-            // Hex means nothing to a Johnny program.
-            let hex = !machine.instruction_set.johnny;
+            // Decimal is always there; a machine in another radix gets a column for it too.
+            let format = machine.instruction_set.format;
+            let radix = format.radix != 10;
 
-            if hex {
-                ui.label("Hex");
+            if radix {
+                ui.label(if format.radix == 16 {
+                    "Hex".to_string()
+                } else {
+                    format!("Base {}", format.radix)
+                });
             }
 
             ui.end_row();
@@ -63,8 +68,10 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
 
                 ui.monospace(name).on_hover_text(description);
                 ui.label(text(format!("{value}")));
-                if hex {
-                    ui.label(text(format!("{:04X}", value as u16)));
+                if radix {
+                    ui.label(text(
+                        format.text(value, format.code_digits + format.operand_digits),
+                    ));
                 }
 
                 ui.end_row();

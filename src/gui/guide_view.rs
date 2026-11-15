@@ -169,7 +169,7 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
                     ui,
                     &format!(
                         "{} {}",
-                        machine.instruction_set.digits(definition.code, 2, 2),
+                        machine.instruction_set.format.code_text(definition.code),
                         definition.mnemonic
                     ),
                     9,

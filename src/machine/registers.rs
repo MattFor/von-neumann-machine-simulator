@@ -1,9 +1,12 @@
 const VALUE_MIN: i32 = 0;
 const VALUE_MAX: i32 = 19_999;
 
+// ponytail: not the format's accumulator range, so a negative accumulator stores as 0; widen it
+// with the 0..=65535 check in Program::load once a signed machine needs negative data in memory.
 const MBR_MIN: i32 = VALUE_MIN;
 const MBR_MAX: i32 = 0xffff; // a whole word, so that instructions fit through the data bus
 
+// The accumulator range of the presets; a format can set its own.
 pub const ACC_MIN: i32 = VALUE_MIN;
 pub const ACC_MAX: i32 = VALUE_MAX;
 
@@ -29,10 +32,6 @@ impl Registers {
 
     pub fn reset(&mut self) {
         *self = Self::new();
-    }
-
-    pub fn set_acc(&mut self, value: i32) {
-        self.acc = value.clamp(ACC_MIN, ACC_MAX);
     }
 
     pub fn set_mbr(&mut self, value: i32) {
