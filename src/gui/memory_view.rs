@@ -202,10 +202,11 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                 .show(ui, |ui| {
                     for address in rows {
                         let cell = machine.read(address);
-                        let fixed = set
-                            .format
-                            .fixed_cell
-                            .is_some_and(|(fixed, _)| fixed as usize == address);
+                        let fixed = machine.is_fixed(address);
+                        let locked = format!(
+                            "This cell always holds {}, like CARDIAC's loader, so it can't be changed",
+                            set.format.text(cell, set.format.code_digits + set.format.operand_digits)
+                        );
 
                         let (code, mut operand, decoded) = decode(&set, cell);
                         let mut value = set.format.value(cell);
@@ -245,6 +246,10 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                             .scope(|ui| {
                                 ui.set_max_width(column_width - 2.0 * ui.spacing().button_padding.x);
 
+                                if fixed {
+                                    ui.disable();
+                                }
+
                                 egui::ComboBox::from_id_salt(("opcode", address))
                                     .width(column_width)
                                     .truncate()
@@ -279,11 +284,13 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                             })
                             .inner;
 
+                        let combo_response = combo_response.response.on_disabled_hover_text(&locked);
+
                         // The whole name, which a narrow column cuts short.
                         if let Some(index) = decoded {
                             let definition = &set.definitions[index];
 
-                            combo_response.response.on_hover_text(format!(
+                            combo_response.on_hover_text(format!(
                                 "{}\n{}",
                                 definition.mnemonic,
                                 definition.opcode.description()
@@ -291,34 +298,43 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                         }
 
                         // A code past the last one has no words to give another operand.
-                        let operand_changed = ui
-                            .add_enabled_ui(code <= max_code, |ui| {
+                        let operand_field = ui
+                            .add_enabled_ui(code <= max_code && !fixed, |ui| {
                                 ui.add_sized(
                                     [column_width, row_height],
                                     radix_drag(&mut operand, set.format, set.format.operand_digits)
                                         .range(0..=max_operand),
                                 )
                             })
-                            .inner
-                            .changed();
+                            .inner;
+                        let operand_changed = if fixed {
+                            operand_field.on_disabled_hover_text(&locked)
+                        } else {
+                            operand_field
+                        }
+                        .changed();
 
                         let value_changed = ui
-                            .add_sized(
-                                [column_width, row_height],
-                                egui::DragValue::new(&mut value)
-                                    .range(set.values())
-                                    .clamp_existing_to_range(false),
-                            )
+                            .add_enabled_ui(!fixed, |ui| {
+                                ui.add_sized(
+                                    [column_width, row_height],
+                                    egui::DragValue::new(&mut value)
+                                        .range(set.values())
+                                        .clamp_existing_to_range(false),
+                                )
+                            })
+                            .inner
                             .on_hover_text(machine.describe(set.format.fetched(cell)))
+                            .on_disabled_hover_text(&locked)
                             .changed();
 
                         // Only an edit writes, so that just showing a cell never rewrites it.
                         if let Some(definition) = picked {
-                            machine.memory.write(address, pick(&set, definition, operand));
+                            machine.edit(address, pick(&set, definition, operand));
                         } else if operand_changed {
-                            machine.memory.write(address, set.join(code, operand));
+                            machine.edit(address, set.join(code, operand));
                         } else if value_changed {
-                            machine.memory.write(address, set.format.word(value));
+                            machine.edit(address, set.format.word(value));
                         }
 
                         ui.end_row();

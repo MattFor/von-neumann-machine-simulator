@@ -21,6 +21,29 @@ const OUTPUT_LIMIT: usize = 16 * 1024;
 // More micro steps than this in one instruction means its micro program loops.
 const MICRO_LIMIT: usize = 1000;
 
+// How many steps Back can undo.
+const HISTORY_LIMIT: usize = 4096;
+
+// What a step changed besides the registers, so that Back can put it back.
+enum Change {
+    Cell(usize, i32), // a memory cell and the word it held
+    Input(i32),       // a value IN took from the queue
+    Output(String),   // the console before the limit cut it short
+}
+
+// The machine before a step, apart from the changes it logs.
+struct Undo {
+    cpu: Registers,
+    previous: Registers,
+    halted: bool,
+    waiting: bool,
+    executing: bool,
+    mc: usize,
+    output: usize,
+    recorded: bool,
+    changes: Vec<Change>,
+}
+
 // Why Machine::run ended.
 pub enum Stop {
     Halted,
@@ -51,6 +74,10 @@ pub struct Machine {
 
     pub input: VecDeque<i32>,
     pub output: String,
+
+    // The steps Back can undo, oldest first, and what the current one has changed so far.
+    history: VecDeque<Undo>,
+    changes: Vec<Change>,
 }
 
 impl Machine {
@@ -76,6 +103,9 @@ impl Machine {
 
             input: VecDeque::new(),
             output: String::new(),
+
+            history: VecDeque::new(),
+            changes: Vec::new(),
         }
     }
 
@@ -93,6 +123,7 @@ impl Machine {
 
         self.input.clear();
         self.output.clear();
+        self.history.clear();
     }
 
     pub fn clear(&mut self) {
@@ -101,6 +132,97 @@ impl Machine {
         self.breakpoints.clear();
 
         self.reset();
+    }
+
+    // A cell edited by hand: the fixed cell can't be, and the steps before can't be undone.
+    pub fn edit(&mut self, address: usize, word: i32) {
+        if !self.is_fixed(address) {
+            self.memory.write(address, word);
+            self.history.clear();
+        }
+    }
+
+    pub fn is_fixed(&self, address: usize) -> bool {
+        self.instruction_set
+            .format
+            .fixed_cell
+            .is_some_and(|(cell, _)| cell as usize == address)
+    }
+
+    pub fn can_go_back(&self) -> bool {
+        !self.history.is_empty()
+    }
+
+    fn save(&self) -> Undo {
+        Undo {
+            cpu: self.cpu,
+            previous: self.previous,
+            halted: self.halted,
+            waiting: self.waiting,
+            executing: self.executing,
+            mc: self.mc,
+            output: self.output.len(),
+            recorded: false,
+            changes: Vec::new(),
+        }
+    }
+
+    fn keep(&mut self, mut undo: Undo) {
+        undo.changes = std::mem::take(&mut self.changes);
+
+        // A step that changed nothing, like Step while IN waits, is not worth a Back.
+        let same = (undo.cpu, undo.halted, undo.waiting, undo.executing, undo.mc, undo.output)
+            == (self.cpu, self.halted, self.waiting, self.executing, self.mc, self.output.len());
+
+        if same && undo.changes.is_empty() && !undo.recorded {
+            return;
+        }
+
+        if self.history.len() == HISTORY_LIMIT {
+            self.history.pop_front();
+        }
+
+        self.history.push_back(undo);
+    }
+
+    // Undoes the last step, micro step or micro step by hand; false if there is none.
+    pub fn back(&mut self) -> bool {
+        let Some(undo) = self.history.pop_back() else {
+            return false;
+        };
+
+        for change in undo.changes.into_iter().rev() {
+            match change {
+                Change::Cell(address, word) => self.memory.write(address, word),
+                Change::Input(value) => self.input.push_front(value),
+                Change::Output(text) => self.output = text,
+            }
+        }
+
+        // Drops what the step printed after the old end.
+        self.output.truncate(undo.output);
+
+        if undo.recorded
+            && let Some(steps) = &mut self.recording
+        {
+            steps.pop();
+        }
+
+        self.cpu = undo.cpu;
+        self.previous = undo.previous;
+        self.halted = undo.halted;
+        self.waiting = undo.waiting;
+        self.executing = undo.executing;
+        self.mc = undo.mc;
+
+        true
+    }
+
+    pub(super) fn pop_input(&mut self) -> Option<i32> {
+        let value = self.input.pop_front()?;
+        self.changes.push(Change::Input(value));
+
+        Some(value)
     }
 
     pub fn push_input(&mut self, value: i32) {
@@ -164,7 +286,7 @@ impl Machine {
     // What the memory cell holds, unless the format fixes it.
     pub fn read(&self, address: usize) -> i32 {
         match self.instruction_set.format.fixed_cell {
-            Some((cell, word)) if cell as usize == address => word,
+            Some((_, word)) if self.is_fixed(address) => word,
             _ => self.memory.read(address),
         }
     }
@@ -188,6 +310,8 @@ impl Machine {
 
         let address = self.address(self.cpu.mar as i32);
         self.cpu.mar = address;
+        self.changes
+            .push(Change::Cell(address as usize, self.memory.read(address as usize)));
         self.memory.write(address as usize, value);
     }
 
@@ -195,6 +319,7 @@ impl Machine {
         self.output.push_str(text);
 
         if self.output.len() > OUTPUT_LIMIT {
+            self.changes.push(Change::Output(self.output.clone()));
             self.output.drain(..OUTPUT_LIMIT / 2);
         }
     }
@@ -232,19 +357,25 @@ impl Machine {
             return;
         }
 
+        let undo = self.save();
         self.previous = self.cpu;
         self.micro();
+        self.keep(undo);
     }
 
     // A micro step fired by hand; it does not move the control unit on.
     pub fn manual(&mut self, op: MicroOp) {
+        let mut undo = self.save();
         self.previous = self.cpu;
 
         execute(self, op);
 
         if let Some(steps) = &mut self.recording {
             steps.push(op);
+            undo.recorded = true;
         }
+
+        self.keep(undo);
     }
 
     // Finishes the current instruction, from wherever the micro steps are.
@@ -253,18 +384,21 @@ impl Machine {
             return;
         }
 
+        let undo = self.save();
         self.previous = self.cpu;
 
-        for _ in 0..MICRO_LIMIT {
+        let ended = (0..MICRO_LIMIT).any(|_| {
             self.micro();
 
-            if self.halted || self.waiting || (!self.executing && self.mc == 0) {
-                return;
-            }
+            self.halted || self.waiting || (!self.executing && self.mc == 0)
+        });
+
+        if !ended {
+            self.print("error: the instruction never ends\n");
+            self.halted = true;
         }
 
-        self.print("error: the instruction never ends\n");
-        self.halted = true;
+        self.keep(undo);
     }
 
     // Returns true when it stopped on a breakpoint, or on an instruction that left the program
@@ -1335,6 +1469,107 @@ mod tests {
         }
 
         assert_eq!((next, machine.cpu.ir as i32), (901, 901));
+    }
+
+    #[test]
+    fn back_undoes_every_step_down_to_the_start() {
+        // IN, STORE 20, OUT, HALT.
+        let mut machine = machine_with(&[word(9, 0), word(2, 20), word(10, 0), word(255, 0)]);
+        machine.memory.write(20, 3);
+        machine.push_input(7);
+        machine.push_input(8);
+        let start = machine.cpu;
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!((machine.memory.read(20), machine.output.as_str()), (7, "7\n"));
+
+        machine.back();
+
+        assert!(!machine.halted && machine.cpu.pc == 3);
+
+        while machine.back() {}
+
+        assert!(machine.cpu == start && machine.previous == start);
+        assert_eq!((machine.memory.read(20), machine.output.as_str()), (3, ""));
+        assert_eq!(machine.input, [7, 8]);
+        assert!(!machine.can_go_back());
+    }
+
+    #[test]
+    fn back_undoes_micro_steps_and_steps_by_hand_one_at_a_time() {
+        let mut machine = machine_with(&[word(1, 10)]);
+        machine.recording = Some(Vec::new());
+
+        machine.micro_step();
+        machine.micro_step();
+        machine.manual(MicroOp::AccInc);
+
+        machine.back();
+
+        assert_eq!((machine.cpu.acc, machine.recording.as_deref()), (0, Some(&[][..])));
+
+        machine.back();
+
+        assert_eq!((machine.mc, machine.executing, machine.cpu.mar), (1, false, 0));
+
+        // Step while IN waits changes nothing, so there is nothing to undo for it.
+        let mut waiting = machine_with(&[word(9, 0)]);
+        waiting.step();
+        waiting.step();
+
+        assert!(waiting.back() && !waiting.back());
+    }
+
+    #[test]
+    fn back_brings_back_output_the_limit_cut_off() {
+        let mut machine = machine_with(&[word(10, 0), word(7, 0)]);
+
+        machine.run_steps(OUTPUT_LIMIT - 4);
+
+        let output = machine.output.clone();
+        machine.run_steps(20);
+
+        assert!(machine.output.len() < output.len());
+
+        for _ in 0..20 {
+            machine.back();
+        }
+
+        assert_eq!(machine.output, output);
+    }
+
+    #[test]
+    fn history_is_bounded_and_forgotten_on_reset_and_on_edits() {
+        let mut machine = Machine::new();
+        machine.run_steps(HISTORY_LIMIT + 100);
+
+        let mut undone = 0;
+
+        while machine.back() {
+            undone += 1;
+        }
+
+        assert_eq!(undone, HISTORY_LIMIT);
+
+        machine.step();
+        machine.edit(5, 1);
+
+        assert!(!machine.can_go_back() && machine.memory.read(5) == 1);
+
+        machine.step();
+        machine.reset();
+
+        assert!(!machine.can_go_back());
+
+        // The fixed cell takes no edit at all.
+        let mut cardiac = cardiac(&[]);
+        cardiac.step();
+        cardiac.edit(0, 5);
+
+        assert_eq!(cardiac.memory.read(0), 0);
+        assert!(cardiac.can_go_back());
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

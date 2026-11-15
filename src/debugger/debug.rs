@@ -75,7 +75,7 @@ impl Debug {
 
         let cells = state.machine.instruction_set.format.cells().max(1) as i32;
         let cell = address.rem_euclid(cells);
-        state.machine.memory.write(cell as usize, value);
+        state.machine.edit(cell as usize, value);
 
         Some((address, cell))
     }

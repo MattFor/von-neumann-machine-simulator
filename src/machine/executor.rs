@@ -141,7 +141,7 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
         MicroOp::AccToDb => machine.set_data_bus(acc),
         MicroOp::DbToAcc => machine.set_acc(mbr),
 
-        MicroOp::Input | MicroOp::InputToDb => match machine.input.pop_front() {
+        MicroOp::Input | MicroOp::InputToDb => match machine.pop_input() {
             Some(value) if op == MicroOp::Input => machine.set_acc(value),
             Some(value) => machine.set_data_bus(value),
 

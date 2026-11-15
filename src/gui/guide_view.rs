@@ -20,6 +20,10 @@ const SECTIONS: [(&str, &str); 9] = [
         "Run (F5) carries out instructions at the chosen speed and becomes Pause while it \
          does.\n\
          Step (F10) carries out one instruction.\n\
+         Back (F9) undoes the last step or micro step, up to a few thousand of them: memory, \
+         registers, flags, console and input go back to how they were. Loading a program, \
+         Reset, Clear and editing a memory cell start afresh, so there is nothing to go back \
+         to. Each machine keeps its own steps, so switching machines loses none.\n\
          Reset (Ctrl+R) puts the registers and the console back to the start. Memory is kept.\n\
          Clear erases the memory.\n\
          Open Program (Ctrl+O) and Save Program (Ctrl+S) read and write program files.\n\n\
@@ -60,7 +64,9 @@ const SECTIONS: [(&str, &str); 9] = [
         "By hand",
         "In the advanced view every micro step is also a button, so you can play control unit \
          yourself. The transfers to and from the data bus sit on the arrows above the blue \
-         bar, the arithmetic is in the CPU card and the rest in the Control Unit card.\n\n\
+         bar, the arithmetic is in the CPU card and the rest in the Control Unit card. Steps \
+         only some machines use, like CARDIAC's shift or SAP-1's cf:ins->pc, get their button \
+         when the loaded instruction set has them.\n\n\
          Set address bus in the Memory card and the number on the blue bar put a value on a \
          bus directly. Like the accumulator in the CPU card, the bar takes a whole word in the \
          machine's radix, so on MARIE FFFF is -1. Next to the accumulator it says whether it \
@@ -114,19 +120,23 @@ const SECTIONS: [(&str, &str); 9] = [
          Bell Labs' cardboard computer, has 100 cells of a sign and three decimal digits and a \
          four-digit accumulator. Its cell 00 always holds 001, the loader: run from 00, it \
          reads the next input into 01 and carries on there. JMP leaves a jump back in cell 99, \
-         and SFT 21 shifts the accumulator 2 digits left, then 1 right. Each machine keeps its \
-         own program, so switching back and forth loses nothing.\n\n\
+         and SFT 21 shifts the accumulator 2 digits left, then 1 right. SAP-1, Ben Eater's \
+         breadboard computer, has 16 bytes of a hex digit of code and one of address, and an \
+         8-bit A register that goes round from 255 to 0 instead of stopping. ADD and SUB set \
+         its carry flag (on SUB, when nothing was borrowed) and zero flag, shown as CF and ZF \
+         in the Registers card, and JC and JZ jump on them. Each machine keeps its own \
+         program, so switching back and forth loses nothing.\n\n\
          Once the instruction set or its format matches none of them, the picker says Custom. \
          Picking the machine again gives it its own set back and keeps the memory.\n\n\
          Example has a program for every machine and loads it on its machine.\n\n\
          The Format on the Instruction Set tab sets what the words look like: the radix, the \
          digits of code and operand, how many codes and cells there are, the accumulator range, \
-         how negative numbers are stored, and what happens on an unknown code or after the last \
-         cell. A format the registers cannot hold, or one that leaves an instruction without \
-         its code, is not applied, and the tab says why.\n\n\
+         how negative numbers are stored, what happens on an unknown code or after the last \
+         cell, and whether plus and minus set flags. A format the registers cannot hold, or one \
+         that leaves an instruction without its code, is not applied, and the tab says why.\n\n\
          Open Program reads Johnny's .ram files and Open Set its .mc microcode files. Both \
-         switch to Johnny by themselves. To write a .ram file for Johnny, save the program \
-         under a name ending in .ram.",
+         switch to Johnny by themselves, also from Bonsai. To write a .ram file for Johnny, \
+         save the program under a name ending in .ram.",
     ),
 ];
 
@@ -181,6 +191,13 @@ fn machine_text(machine: &Machine) -> String {
     } else {
         ""
     };
+    let flags = if format.flags {
+        " Past one end of that range it comes round from the other, like a register.\n\
+         CF and ZF are the carry and zero flags: plus and minus set them, the cf: and zf: \
+         jumps test them."
+    } else {
+        ""
+    };
     let digits = |count: u32| match count {
         1 => "1 digit".to_string(),
         count => format!("{count} digits"),
@@ -193,7 +210,7 @@ fn machine_text(machine: &Machine) -> String {
          so {code}{operand} is code {code} with operand {operand}. There are {} codes; a word \
          whose code is no instruction {unknown}.{fixed}\n\n\
          ACC is the accumulator, where all arithmetic happens. It stays between {} and {}.\
-         {negative}\n\
+         {negative}{flags}\n\
          PC is the program counter, the address of the next instruction. After the last cell \
          {after_last}.{stays}\n\
          IR is the instruction register, the instruction being carried out.\n\
@@ -301,7 +318,7 @@ pub fn show(ui: &mut Ui, machine: &Machine) {
             ui.heading("Coming from Johnny");
             ui.label(
                 "Everything Johnny does is here, some of it under another name. Breakpoints, \
-                 the console with IN and OUT, MUL, DIV and JZ are extra. Two things are \
+                 Back, the console with IN and OUT, MUL, DIV and JZ are extra. Two things are \
                  missing: a set cannot be saved as a .mc file, and a changed fetch in a .mc \
                  file is ignored.",
             );
@@ -327,6 +344,7 @@ mod tests {
             (InstructionSet::lmc(), ["1 digit of code", "-999 and 999", "keeps its sign"]),
             (InstructionSet::marie(), ["4096 cells", "100A is code 1", "-1 is FFFF"]),
             (InstructionSet::cardiac(), ["is CARDIAC", "-9999 and 9999", "Cell 00 always holds 001"]),
+            (InstructionSet::sap1(), ["is SAP-1", "16 cells from 0 to F", "CF and ZF"]),
         ] {
             machine.instruction_set = preset;
             let text = machine_text(&machine);
@@ -334,6 +352,15 @@ mod tests {
             for fact in facts {
                 assert!(text.contains(fact), "{fact}: {text}");
             }
+
+            assert_eq!(text.contains("CF and ZF"), machine.instruction_set.format.flags);
+        }
+
+        // The machine list names every machine.
+        let machines = SECTIONS.iter().find(|(title, _)| *title == "Machines").unwrap().1;
+
+        for (name, _) in PRESETS {
+            assert!(machines.contains(name), "{name}");
         }
     }
 }

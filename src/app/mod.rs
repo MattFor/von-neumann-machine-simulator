@@ -84,6 +84,15 @@ impl eframe::App for VnmApp {
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        self.draw(ui);
+    }
+}
+
+impl VnmApp {
+    fn draw(&mut self, ui: &mut egui::Ui) {
+        // Before drawing, so the frame shows the instructions it ran.
+        self.state.tick(Instant::now());
+
         let layout = self.state.layout();
 
         egui::Panel::top("top_menu").show(ui, |ui| {
@@ -217,38 +226,9 @@ impl eframe::App for VnmApp {
             }
         });
 
-        if self.state.running && !self.state.machine.waiting {
-            let now = Instant::now();
-            // Clamped so a stall (file dialog, waiting for input) is not replayed as a burst.
-            let dt = (now - self.state.last_tick).as_secs_f64().min(0.1);
-            self.state.last_tick = now;
-
-            self.state.time_accumulator += dt;
-            let secs_per_instruction = 1.0 / self.state.speed as f64;
-            let steps = (self.state.time_accumulator / secs_per_instruction).floor() as usize;
-
-            if self.state.machine.run_steps(steps) {
-                self.state.running = false;
-                let machine = &self.state.machine;
-                let pc = machine.cpu.pc;
-
-                // Off a breakpoint, the format stopped it on an instruction that kept the pc.
-                self.state.status_message = format!(
-                    "{} at {}",
-                    if machine.breakpoints.contains(&pc) {
-                        "Breakpoint"
-                    } else {
-                        "Stopped"
-                    },
-                    machine.instruction_set.format.operand_text(pc as i32)
-                );
-            }
-
-            self.state.time_accumulator -= steps as f64 * secs_per_instruction;
-
-            self.state.sync_running();
-
-            ui.ctx().request_repaint();
+        // After drawing, so that Run pressed in this frame is seen.
+        if let Some(due) = self.state.due() {
+            ui.ctx().request_repaint_after(due);
         }
 
         // A toggle drawn after the panels it moves would leave them a frame behind, so the
@@ -256,5 +236,65 @@ impl eframe::App for VnmApp {
         if self.state.layout() != layout {
             ui.ctx().request_discard("the layout changed");
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::time::Duration;
+
+    // The repaint each frame asks for, over a few frames of no input a second apart, so that
+    // egui's own animations end.
+    fn repaints(app: &mut VnmApp, frames: usize, size: egui::Vec2) -> Vec<Duration> {
+        let ctx = egui::Context::default();
+
+        (0..frames)
+            .map(|frame| {
+                let input = egui::RawInput {
+                    screen_rect: Some(egui::Rect::from_min_size(egui::Pos2::ZERO, size)),
+                    time: Some(frame as f64),
+                    ..Default::default()
+                };
+                let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+                output.textures_delta.clear();
+
+                output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
+            })
+            .collect()
+    }
+
+    #[test]
+    fn a_paused_machine_asks_for_no_repaints_and_a_slow_one_for_one_per_instruction() {
+        let mut app = VnmApp {
+            state: AppState::new(),
+        };
+
+        let size = egui::vec2(1180.0, 760.0);
+
+        for preset in 0..PRESETS.len() {
+            app.state.pick(preset);
+
+            for advanced in [false, true] {
+                app.state.advanced = advanced;
+
+                for size in [size, egui::vec2(700.0, 500.0)] {
+                    let delays = repaints(&mut app, 6, size);
+
+                    assert_eq!(delays[3..], [Duration::MAX; 3], "{preset} {advanced} {size:?}");
+                }
+            }
+        }
+
+        app.state.speed = 1;
+        app.state.running = true;
+        app.state.last_tick = Instant::now();
+
+        let delays = repaints(&mut app, 6, size);
+
+        assert!(
+            delays[3..].iter().all(|delay| *delay > Duration::from_millis(500)),
+            "{delays:?}"
+        );
     }
 }
