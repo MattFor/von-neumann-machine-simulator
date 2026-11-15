@@ -204,6 +204,21 @@ fn a_json_file_is_checked_against_the_machine_it_runs_on() {
     assert!(fs::metadata(&out).is_err());
 }
 
+// Without a set of its own a file runs on Standard, so it is checked against it.
+#[test]
+fn a_json_file_without_a_set_is_checked_against_standard() {
+    let path = temp("far.json");
+    fs::write(&path, r#"{"name":"far","entry_point":300,"memory":[]}"#).unwrap();
+
+    let ran = run(&[&path]);
+    let on_standard = run(&[&path, "--machine", "standard"]);
+    fs::remove_file(&path).unwrap();
+
+    assert_eq!((ran.0.as_str(), ran.2), ("", 1));
+    assert!(ran.1.contains("the program starts at 12C, past the last cell, FF"), "{}", ran.1);
+    assert_eq!(ran, on_standard);
+}
+
 // Like output redirected to a full disk.
 #[cfg(target_os = "linux")]
 #[test]

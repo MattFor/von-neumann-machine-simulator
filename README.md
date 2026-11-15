@@ -186,8 +186,8 @@ von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --inp
 
 - `--machine standard|johnny|bonsai|lmc|marie|cardiac|sap1` picks the machine. Without it, a file
   runs on the set it carries, `.ram` on Johnny and JSON on Standard; `.asm` needs it.
-  A `.ram` file runs on `johnny` or `bonsai`, a `.mas` file only on `marie`, and a JSON
-  file is checked against the machine it runs on.
+  A `.ram` file runs on `johnny` or `bonsai`, a `.mas` file only on `marie`, and every
+  file is checked against the machine it runs on, as **Open Program** does.
 - `--input 1,2,-3` is what `IN` reads. `0x` and `0b` values are words in the machine's
   encoding, so `0xFFFF` is -1 on MARIE.
 - `--max-steps N` stops after `N` instructions (100000 by default).

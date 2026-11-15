@@ -260,6 +260,7 @@ impl AppState {
             self.switch(preset);
         } else if preset_of(&self.machine.instruction_set).is_none() {
             self.machine.instruction_set = InstructionSet::presets()[preset].clone();
+            self.machine.fit_entry_point();
             self.running = false;
             self.status_message = format!("Restored the {} instruction set", PRESETS[preset].0);
         }
@@ -284,6 +285,7 @@ impl AppState {
 
         self.status_message = format!("Loaded the {} instruction set", set.name);
         self.machine.instruction_set = set;
+        self.machine.fit_entry_point();
     }
 
     pub fn load(&mut self, program: Program) {
@@ -322,11 +324,27 @@ impl AppState {
         self.open_program_at(&path);
     }
 
+    // The set of a preset's machine, as switching to it would find it.
+    fn set_of(&self, preset: usize) -> InstructionSet {
+        match self.others.iter().find(|(slot, ..)| *slot == preset) {
+            Some((_, machine, _)) => machine.instruction_set.clone(),
+            None if preset == self.preset => self.machine.instruction_set.clone(),
+            None => InstructionSet::presets()[preset].clone(),
+        }
+    }
+
     pub fn open_program_at(&mut self, path: &Path) {
-        match Program::load(path, &self.machine.instruction_set) {
+        // Johnny's words run on any machine of them, as in Johnny, else on Johnny's, preset 1.
+        let onto_johnny = is_ram(path) && !self.machine.instruction_set.format.johnny_compatible();
+        let set = if onto_johnny {
+            self.set_of(1)
+        } else {
+            self.machine.instruction_set.clone()
+        };
+
+        match Program::load(path, &set) {
             Ok(program) => {
-                // Johnny's words run on any machine of them, as in Johnny, else on Johnny.
-                if is_ram(path) && !self.machine.instruction_set.format.johnny_compatible() {
+                if onto_johnny {
                     self.route(&InstructionSet::johnny());
                 }
 
@@ -386,17 +404,24 @@ impl AppState {
     }
 
     pub fn open_set_at(&mut self, path: &Path) {
-        match InstructionSet::load(path) {
-            Ok(mut set) => {
-                let format = self.machine.instruction_set.format;
+        let mc = has_extension(path, "mc");
+        let format = self.machine.instruction_set.format;
 
-                // Microcode only, so it runs on this machine's words if they are Johnny's.
-                if has_extension(path, "mc") {
-                    if format.johnny_compatible() {
-                        set.format = format;
-                    } else {
-                        self.route(&InstructionSet::johnny());
-                    }
+        // Microcode only, so it runs on this machine's words if they are Johnny's, and only if
+        // their codes and cells hold its instructions.
+        let loaded = InstructionSet::load(path).and_then(|mut set| {
+            if mc && format.johnny_compatible() {
+                set.format = format;
+                set.check()?;
+            }
+
+            Ok(set)
+        });
+
+        match loaded {
+            Ok(set) => {
+                if mc && !format.johnny_compatible() {
+                    self.route(&InstructionSet::johnny());
                 }
 
                 self.use_set(set);
@@ -555,6 +580,112 @@ mod tests {
 
         std::fs::remove_file(&ram).unwrap();
         std::fs::remove_file(&mc).unwrap();
+    }
+
+    // On LMC, on Johnny with signed cells, and from Standard onto that Johnny machine.
+    #[test]
+    fn a_file_without_a_set_is_checked_against_the_machine_it_lands_on() {
+        let json = temp_path("gui-setless.json");
+        let ram = temp_path("gui-signed.ram");
+        std::fs::write(
+            &json,
+            r#"{"name":"countdown","entry_point":0,"memory":[266,2560,3082,266,2054,1793,65280,0,0,0,5]}"#,
+        )
+        .unwrap();
+        std::fs::write(&ram, include_str!("../../assets/sum.ram")).unwrap();
+
+        let mut signed = InstructionSet::johnny();
+        signed.format.data_encoding = crate::machine::DataEncoding::Lmc;
+
+        for (preset, set, path, from, cells) in [
+            (3, InstructionSet::lmc(), &json, 3, 100),
+            (1, signed.clone(), &ram, 1, 1000),
+            (1, signed, &ram, 0, 1000),
+        ] {
+            let mut state = AppState::new();
+            state.switch(preset);
+            state.machine.instruction_set = set;
+            state.switch(from);
+            state.open_program_at(path);
+
+            assert_eq!(
+                (state.preset, state.machine.memory.read(0)),
+                (from, 0),
+                "{path:?} from {from}"
+            );
+            assert_eq!(
+                state.status_message,
+                format!(
+                    "Could not load program: an LMC program has at most {cells} cells, each \
+                     between -999 and 999"
+                )
+            );
+        }
+
+        std::fs::remove_file(&json).unwrap();
+        std::fs::remove_file(&ram).unwrap();
+    }
+
+    #[test]
+    fn microcode_the_machines_codes_cannot_hold_is_refused() {
+        // Code 15 is mc=0 alone.
+        let mc = temp_path("gui-wide.mc");
+        std::fs::write(&mc, format!("{}7\n", "0\n".repeat(150))).unwrap();
+
+        let mut state = AppState::new();
+        state.pick(1);
+        state.machine.instruction_set.format.codes = Some(11);
+        let before = state.machine.instruction_set.clone();
+
+        state.open_set_at(&mc);
+        std::fs::remove_file(&mc).unwrap();
+
+        assert_eq!(state.machine.instruction_set, before);
+        assert_eq!(
+            state.status_message,
+            "Could not load instruction set: instruction codes must be between 0 and 10"
+        );
+    }
+
+    // As Reset would, so Save works at once: through Open Set, the format tab and the picker.
+    #[test]
+    fn fewer_cells_take_the_entry_point_round_into_them() {
+        let path = temp_path("gui-small.json");
+        let mut small = InstructionSet::johnny();
+        small.format.cells = Some(100);
+        small.save(&path).unwrap();
+
+        let mut state = AppState::new();
+        state.pick(1);
+        state.machine.entry_point = 510;
+        state.open_set_at(&path);
+        std::fs::remove_file(&path).unwrap();
+
+        assert_eq!((state.preset, state.machine.entry_point), (1, 10));
+        Program::from_machine("x".to_string(), &state.machine)
+            .check()
+            .unwrap();
+
+        state.machine.entry_point = 510;
+        state.machine.instruction_set.format.cells = Some(50);
+        egui::Context::default()
+            .run_ui(egui::RawInput::default(), |ui| {
+                crate::app::instruction_mode::show(ui, &mut state);
+            })
+            .textures_delta
+            .clear();
+
+        assert_eq!(state.machine.entry_point, 10);
+
+        // Bonsai's few codes leave room for a fourth operand digit, and the picker takes it back.
+        state.pick(2);
+        state.machine.instruction_set.format.codes = Some(6);
+        state.machine.instruction_set.format.operand_digits = 4;
+        state.machine.instruction_set.check().unwrap();
+        state.machine.entry_point = 5010;
+        state.pick(2);
+
+        assert_eq!(state.machine.entry_point, 10);
     }
 
     #[test]

@@ -111,7 +111,7 @@ impl Machine {
 
     pub fn reset(&mut self) {
         self.cpu.reset();
-        self.entry_point = self.address(self.entry_point as i32);
+        self.fit_entry_point();
         self.cpu.pc = self.entry_point;
         self.previous = self.cpu;
 
@@ -124,6 +124,11 @@ impl Machine {
         self.input.clear();
         self.output.clear();
         self.history.clear();
+    }
+
+    // Into the format's cells, for when they shrink under it.
+    pub fn fit_entry_point(&mut self) {
+        self.entry_point = self.address(self.entry_point as i32);
     }
 
     pub fn clear(&mut self) {
