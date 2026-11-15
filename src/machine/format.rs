@@ -173,20 +173,19 @@ impl Format {
             self.code_digits > 0 && self.operand_digits > 0,
             "a word needs at least one digit of code and one of operand"
         );
+        anyhow::ensure!(
+            self.code_digits <= 16 && self.operand_digits <= 16,
+            "code and operand digit counts must not exceed 16"
+        );
 
-        let code_span = u64::from(self.radix)
+        let code_span = u128::from(self.radix)
             .checked_pow(self.code_digits)
             .ok_or_else(|| anyhow::anyhow!("the code digit count is too large"))?;
-        let operand_span = u64::from(self.radix)
+        let operand_span = u128::from(self.radix)
             .checked_pow(self.operand_digits)
             .ok_or_else(|| anyhow::anyhow!("the operand digit count is too large"))?;
-        let codes = self.codes.map_or(code_span, u64::from);
-        let cells = self.cells.map_or(operand_span, u64::from);
-
-        anyhow::ensure!(
-            code_span <= 0x1_0000 && operand_span <= 0x1_0000,
-            "code and operand digit spans must fit 16 bits (65536)"
-        );
+        let codes = self.codes.map_or(code_span, u128::from);
+        let cells = self.cells.map_or(operand_span, u128::from);
 
         anyhow::ensure!(
             (1..=code_span).contains(&codes),
@@ -195,11 +194,16 @@ impl Format {
             code_span
         );
         anyhow::ensure!(
-            codes.checked_mul(operand_span).is_some_and(|span| span <= 0x1_0000),
+            operand_span <= 0x1_0000,
+            "the operand digit span must fit 16 bits (65536)"
+        );
+        let largest_word = (codes - 1) * operand_span + (operand_span - 1);
+        anyhow::ensure!(
+            largest_word <= 0xffff,
             "the largest word must fit 16 bits (65535)"
         );
         anyhow::ensure!(
-            (1..=MEMORY_SIZE as u64).contains(&cells),
+            (1..=MEMORY_SIZE as u128).contains(&cells),
             "there must be between 1 and {MEMORY_SIZE} cells"
         );
         anyhow::ensure!(
@@ -283,6 +287,27 @@ mod tests {
         };
 
         assert!(format.check().is_err());
+    }
+
+    #[test]
+    fn explicit_code_counts_determine_the_largest_word() {
+        let format = Format {
+            radix: 10,
+            code_digits: 5,
+            operand_digits: 1,
+            codes: Some(10),
+            ..Format::default()
+        };
+
+        assert!(format.check().is_ok());
+
+        let too_wide = Format {
+            operand_digits: 4,
+            ..format
+        };
+        let error = too_wide.check().unwrap_err().to_string();
+
+        assert!(error.contains("largest word must fit 16 bits"));
     }
 
     #[test]

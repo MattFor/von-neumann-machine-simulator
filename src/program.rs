@@ -221,8 +221,8 @@ impl Program {
                 "a .ram file holds Johnny's words: radix 10, 2 code digits and 3 operand digits"
             );
 
-            let johnny = InstructionSet::johnny();
-            validate_ram_program(self, self.instruction_set.as_ref().unwrap_or(&johnny))?;
+            // .ram files are always loaded as Johnny programs, regardless of their embedded set.
+            validate_ram_program(self, &InstructionSet::johnny())?;
 
             self.to_ram()
         } else if has_extension(path, "asm") {
@@ -353,6 +353,28 @@ mod tests {
             .unwrap_err();
 
         assert!(error.to_string().contains("radix 10"));
+    }
+
+    #[test]
+    fn ram_saves_validate_using_the_set_that_load_will_use() {
+        let path = std::env::temp_dir().join("vnm-test-lmc-data.ram");
+        let mut set = InstructionSet::johnny();
+        set.format.data_encoding = DataEncoding::Lmc;
+        let program = Program {
+            name: "signed".to_string(),
+            entry_point: 0,
+            memory: vec![5, -5],
+            instruction_set: Some(set),
+        };
+
+        let save_error = program.save(&path).unwrap_err().to_string();
+        fs::write(&path, "5\r\n-5\r\n").unwrap();
+        let load_error = Program::load(&path, &InstructionSet::default())
+            .unwrap_err()
+            .to_string();
+        fs::remove_file(&path).unwrap();
+
+        assert_eq!(save_error, load_error);
     }
 
     #[test]

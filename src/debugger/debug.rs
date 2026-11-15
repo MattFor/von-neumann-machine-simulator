@@ -26,16 +26,24 @@ impl Debug {
 
         match command {
             "SetMem" => {
-                let valid = self.set_memory(state, raw_split);
-                self.command_history.push((raw, valid));
+                let result = self.set_memory(state, raw_split);
+                let (line, valid) = match result {
+                    Some((address, cell)) => (Self::address_reply(raw, address, cell), true),
+                    None => (raw, false),
+                };
+                self.command_history.push((line, valid));
             }
             "SetAcc" => {
                 let valid = self.set_accumulator(state, raw_split);
                 self.command_history.push((raw, valid));
             }
             "SetPc" => {
-                let valid = self.set_program_counter(state, raw_split);
-                self.command_history.push((raw, valid));
+                let result = self.set_program_counter(state, raw_split);
+                let (line, valid) = match result {
+                    Some((address, cell)) => (Self::address_reply(raw, address, cell), true),
+                    None => (raw, false),
+                };
+                self.command_history.push((line, valid));
             }
             "Reset" => {
                 state.reset();
@@ -51,23 +59,25 @@ impl Debug {
         }
     }
 
-    fn set_memory(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
+    fn set_memory(&self, state: &mut AppState, arguments: Vec<&str>) -> Option<(i32, i32)> {
         if arguments.len() < 3 {
-            return false;
+            return None;
         }
 
         let (Some(address), Some(value)) = (parse_value(arguments[1]), parse_value(arguments[2]))
         else {
-            return false;
+            return None;
         };
 
         if !(0..MEMORY_SIZE as i32).contains(&address) {
-            return false;
+            return None;
         }
 
-        state.machine.memory.write(address as usize, value);
+        let cells = state.machine.instruction_set.format.cells().max(1) as i32;
+        let cell = address.rem_euclid(cells);
+        state.machine.memory.write(cell as usize, value);
 
-        true
+        Some((address, cell))
     }
 
     fn set_accumulator(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
@@ -84,22 +94,30 @@ impl Debug {
         true
     }
 
-    fn set_program_counter(&self, state: &mut AppState, arguments: Vec<&str>) -> bool {
+    fn set_program_counter(&self, state: &mut AppState, arguments: Vec<&str>) -> Option<(i32, i32)> {
         if arguments.len() < 2 {
-            return false;
+            return None;
         }
 
-        let Some(value) = parse_value(arguments[1]) else {
-            return false;
-        };
+        let value = parse_value(arguments[1])?;
 
         if !(0..MEMORY_SIZE as i32).contains(&value) {
-            return false;
+            return None;
         }
 
-        state.machine.cpu.pc = value as u16;
+        let cells = state.machine.instruction_set.format.cells().max(1) as i32;
+        let cell = value.rem_euclid(cells);
+        state.machine.cpu.pc = cell as u16;
 
-        true
+        Some((value, cell))
+    }
+
+    fn address_reply(raw: String, address: i32, cell: i32) -> String {
+        if address == cell {
+            raw
+        } else {
+            format!("{raw} (address {address} reduced to {cell})")
+        }
     }
 
     pub fn help(&mut self) {
@@ -117,14 +135,51 @@ impl Debug {
         self.command_history
             .push(("Available Commands:".to_string(), true));
         self.command_history.push((
-            format!("SetMem <ADDRESS [0-{}]> <VALUE DEC/HEX>", MEMORY_SIZE - 1),
+            format!(
+                "SetMem <ADDRESS [0-{}], reduced modulo format cells> <VALUE DEC/HEX>",
+                MEMORY_SIZE - 1
+            ),
             true,
         ));
         self.command_history
             .push(("SetAcc <VALUE DEC/HEX>".to_string(), true));
         self.command_history
-            .push((format!("SetPc <ADDRESS [0-{}]>", MEMORY_SIZE - 1), true));
+            .push((
+                format!(
+                    "SetPc <ADDRESS [0-{}], reduced modulo format cells>",
+                    MEMORY_SIZE - 1
+                ),
+                true,
+            ));
         self.command_history.push(("Reset".to_string(), true));
         self.command_history.push(("Help".to_string(), true));
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::gui_state::AppState;
+    use crate::machine::InstructionSet;
+
+    #[test]
+    fn setmem_and_setpc_reduce_addresses_to_the_format_cells() {
+        let mut state = AppState::new();
+        state.machine.instruction_set = InstructionSet::lmc();
+        let mut debug = Debug::new();
+
+        debug.send(&mut state, "SetMem 500 17".to_string());
+        debug.send(&mut state, "SetPc 105".to_string());
+
+        assert_eq!(state.machine.memory.read(0), 17);
+        assert_eq!(state.machine.memory.read(500), 0);
+        assert_eq!(state.machine.cpu.pc, 5);
+        assert_eq!(
+            debug.command_history,
+            [
+                ("SetMem 500 17 (address 500 reduced to 0)".to_string(), true),
+                ("SetPc 105 (address 105 reduced to 5)".to_string(), true),
+            ]
+        );
     }
 }
