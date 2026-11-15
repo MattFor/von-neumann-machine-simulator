@@ -135,6 +135,7 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
                     machine.instruction_set.definitions.push(Definition {
                         code,
                         operand: None,
+                        operand_mask: None,
                         mnemonic: name.clone(),
                         opcode: Opcode::Custom,
                         micro,

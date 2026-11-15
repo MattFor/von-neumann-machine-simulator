@@ -37,6 +37,44 @@ pub struct Program {
     pub instruction_set: Option<InstructionSet>,
 }
 
+fn validate_program(program: &Program, set: Option<&InstructionSet>) -> anyhow::Result<()> {
+    if let Some(set) = set {
+        set.check()?;
+
+        if set.format.data_encoding == DataEncoding::Lmc {
+            anyhow::ensure!(
+                program.memory.len() <= set.format.cells()
+                    && program.memory.iter().all(|word| (-999..=999).contains(word)),
+                "an LMC program has at most {} cells, each between -999 and 999",
+                set.format.cells()
+            );
+
+            return Ok(());
+        }
+    }
+
+    anyhow::ensure!(
+        program.memory.len() <= MEMORY_SIZE
+            && program
+                .memory
+                .iter()
+                .all(|word| u16::try_from(*word).is_ok()),
+        "a program is at most {MEMORY_SIZE} words, each between 0 and 65535"
+    );
+
+    Ok(())
+}
+
+fn validate_ram_program(program: &Program, set: &InstructionSet) -> anyhow::Result<()> {
+    validate_program(program, Some(set))?;
+    anyhow::ensure!(
+        program.memory.len() <= 1000,
+        "a .ram file has at most 1000 cells"
+    );
+
+    Ok(())
+}
+
 // Kept available for the example selector added in the next UI change.
 #[allow(dead_code)]
 pub struct Example {
@@ -52,7 +90,9 @@ pub fn examples() -> Vec<Example> {
         preset: InstructionSet,
         mut program: Program,
     ) -> Example {
-        program.instruction_set = Some(preset.clone());
+        program
+            .instruction_set
+            .get_or_insert_with(|| preset.clone());
 
         Example {
             name,
@@ -77,7 +117,7 @@ pub fn examples() -> Vec<Example> {
         example(
             "Bonsai increment",
             InstructionSet::bonsai(),
-            Program::from_ram("bonsai", include_str!("../assets/bonsai.ram"))
+            serde_json::from_str(include_str!("../assets/bonsai.json"))
                 .expect("bundled Bonsai example is valid"),
         ),
         example(
@@ -160,27 +200,12 @@ impl Program {
             serde_json::from_str(&text)?
         };
 
-        // A word wider than the 16-bit registers would run as another instruction than it shows.
-        anyhow::ensure!(
-            program.memory.len() <= MEMORY_SIZE
-                && program
-                    .memory
-                    .iter()
-                    .all(|word| u16::try_from(*word).is_ok()),
-            "a program is at most {MEMORY_SIZE} words, each between 0 and 65535"
-        );
-
-        if let Some(set) = &program.instruction_set {
-            set.check()?;
-
-            if set.format.data_encoding == DataEncoding::Lmc {
-                anyhow::ensure!(
-                    program.memory.len() <= set.format.cells()
-                        && program.memory.iter().all(|word| (0..=999).contains(word)),
-                    "an LMC program has at most {} cells, each between 000 and 999",
-                    set.format.cells()
-                );
-            }
+        if is_ram(path) {
+            validate_ram_program(&program, &InstructionSet::johnny())?;
+        } else if has_extension(path, "asm") {
+            validate_program(&program, Some(set))?;
+        } else {
+            validate_program(&program, program.instruction_set.as_ref())?;
         }
 
         Ok(program)
@@ -196,13 +221,18 @@ impl Program {
                 "a .ram file holds Johnny's words: radix 10, 2 code digits and 3 operand digits"
             );
 
+            let johnny = InstructionSet::johnny();
+            validate_ram_program(self, self.instruction_set.as_ref().unwrap_or(&johnny))?;
+
             self.to_ram()
         } else if has_extension(path, "asm") {
             let set = self
                 .instruction_set
                 .as_ref()
                 .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?;
+            validate_program(self, Some(set))?;
             let text = disassemble(&self.memory, self.entry_point, set);
+
             // Words or cells the format cannot hold would not load back.
             let (memory, entry_point) = assembled(&text, set)?;
             let length = self
@@ -218,6 +248,7 @@ impl Program {
 
             text
         } else {
+            validate_program(self, self.instruction_set.as_ref())?;
             serde_json::to_string_pretty(self)?
         };
 
@@ -325,6 +356,13 @@ mod tests {
     }
 
     #[test]
+    fn ram_files_cannot_silently_drop_cells_past_johnnys_memory() {
+        let error = load("too-many.ram", &"0\n".repeat(1001)).unwrap_err();
+
+        assert!(error.to_string().contains("at most 1000 cells"));
+    }
+
+    #[test]
     fn programs_from_before_the_format_load_by_their_johnny_switch() {
         let text = r#"{"name":"x","entry_point":0,"memory":[1010],"instruction_set":
             {"name":"Johnny","johnny":true,"definitions":[]}}"#;
@@ -362,6 +400,42 @@ mod tests {
             program.instruction_set.unwrap().format,
             machine.instruction_set.format
         );
+    }
+
+    #[test]
+    fn saving_and_loading_share_the_lmc_program_validation() {
+        let mut machine = Machine::new();
+        let countdown: Program = serde_json::from_str(include_str!("../assets/countdown.json"))
+            .unwrap();
+        countdown.apply(&mut machine);
+        machine.instruction_set = InstructionSet::lmc();
+
+        let program = Program::from_machine("countdown".to_string(), &machine);
+        let path = std::env::temp_dir().join("vnm-test-countdown-lmc.json");
+        let save_error = program.save(&path).unwrap_err().to_string();
+        fs::write(&path, serde_json::to_string(&program).unwrap()).unwrap();
+        let load_error = Program::load(&path, &InstructionSet::default())
+            .unwrap_err()
+            .to_string();
+        fs::remove_file(&path).unwrap();
+
+        assert_eq!(save_error, load_error);
+        assert!(save_error.contains("an LMC program has at most 100 cells"));
+    }
+
+    #[test]
+    fn bundled_json_examples_embed_their_instruction_sets() {
+        for path in [
+            Path::new("assets/countdown.json"),
+            Path::new("assets/bonsai.json"),
+            Path::new("assets/lmc-echo.json"),
+            Path::new("assets/marie-echo.json"),
+        ] {
+            let program = Program::load(path, &InstructionSet::default()).unwrap();
+
+            let set = program.instruction_set.unwrap();
+            set.check().unwrap();
+        }
     }
 
     #[test]

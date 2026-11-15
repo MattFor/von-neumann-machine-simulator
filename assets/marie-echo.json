@@ -1,5 +1,37 @@
 {
     "name": "marie-echo",
     "entry_point": 0,
-    "memory": [20480, 24576, 28672]
+    "memory": [20480, 24576, 28672],
+    "instruction_set": {
+        "name": "MARIE",
+        "format": {
+            "radix": 16,
+            "code_digits": 1,
+            "operand_digits": 3,
+            "codes": 16,
+            "cells": 4096,
+            "acc_min": -32768,
+            "acc_max": 32767,
+            "data_encoding": "TwosComplement"
+        },
+        "definitions": [
+            {"code": 1, "mnemonic": "Load", "opcode": "Load"},
+            {"code": 2, "mnemonic": "Store", "opcode": "Store"},
+            {"code": 3, "mnemonic": "Add", "opcode": "Add"},
+            {"code": 4, "mnemonic": "Subt", "opcode": "Sub"},
+            {"code": 5, "mnemonic": "Input", "opcode": "Input"},
+            {"code": 6, "mnemonic": "Output", "opcode": "Output"},
+            {"code": 7, "mnemonic": "Halt", "opcode": "Halt"},
+            {"code": 9, "mnemonic": "Jump", "opcode": "Jump"},
+            {"code": 0, "mnemonic": "JnS", "opcode": "Custom", "micro": ["PcInc", "PcToDb", "InsToAb", "DbToRam", "InsToPc", "PcInc", "McZero"]},
+            {"code": 8, "operand": 0, "operand_mask": 3072, "mnemonic": "Skipcond <0", "opcode": "Custom", "micro": ["PcIncIfNegative", "PcInc", "McZero"]},
+            {"code": 8, "operand": 1024, "operand_mask": 3072, "mnemonic": "Skipcond =0", "opcode": "Custom", "micro": ["PcIncIfZero", "PcInc", "McZero"]},
+            {"code": 8, "operand": 2048, "operand_mask": 3072, "mnemonic": "Skipcond >0", "opcode": "Custom", "micro": ["PcIncIfPositive", "PcInc", "McZero"]},
+            {"code": 10, "mnemonic": "Clear", "opcode": "Custom", "micro": ["AccZero", "PcInc", "McZero"]},
+            {"code": 11, "mnemonic": "AddI", "opcode": "Custom", "micro": ["InsToAb", "RamToDb", "DbToAb", "RamToDb", "Plus", "PcInc", "McZero"]},
+            {"code": 12, "mnemonic": "JumpI", "opcode": "Custom", "micro": ["InsToAb", "RamToDb", "DbToAb", "AbToPc", "McZero"]},
+            {"code": 13, "mnemonic": "LoadI", "opcode": "Custom", "micro": ["InsToAb", "RamToDb", "DbToAb", "RamToDb", "DbToAcc", "PcInc", "McZero"]},
+            {"code": 14, "mnemonic": "StoreI", "opcode": "Custom", "micro": ["InsToAb", "RamToDb", "DbToAb", "AccToDb", "DbToRam", "PcInc", "McZero"]}
+        ]
+    }
 }
