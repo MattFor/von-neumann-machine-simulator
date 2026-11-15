@@ -15,10 +15,17 @@ enum Found<'a> {
 // What the first word of a statement stands for.
 enum Op<'a> {
     Instruction(Found<'a>),
-    // A data word written in this radix.
-    Data(u32),
+    // Data in this radix; HEX is an unsigned word, while DEC is a signed value.
+    Data(u32, DataKind),
     Org,
     End,
+}
+
+#[derive(Clone, Copy)]
+enum DataKind {
+    Default,
+    Decimal,
+    Hex,
 }
 
 struct Statement<'a> {
@@ -69,9 +76,9 @@ fn op<'a>(set: &'a InstructionSet, word: &str) -> Option<Op<'a>> {
     }
 
     match word.to_ascii_uppercase().as_str() {
-        "DAT" => Some(Op::Data(set.format.radix)),
-        "DEC" => Some(Op::Data(10)),
-        "HEX" => Some(Op::Data(16)),
+        "DAT" => Some(Op::Data(set.format.radix, DataKind::Default)),
+        "DEC" => Some(Op::Data(10, DataKind::Decimal)),
+        "HEX" => Some(Op::Data(16, DataKind::Hex)),
         "ORG" => Some(Op::Org),
         "END" => Some(Op::End),
         _ => None,
@@ -103,14 +110,6 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
     let cells = format.cells();
     let last = format.text(cells as i32 - 1, 1);
     let (_, max_operand, max_word) = set.limits();
-
-    // Negative data is stored like the machine stores it, in two's complement on MARIE.
-    // ponytail: LMC data stays 0 to 999; allow negatives here once LMC memory is signed.
-    let min_data = if format.data_encoding == DataEncoding::TwosComplement {
-        -(max_word + 1) / 2
-    } else {
-        0
-    };
 
     let mut labels = HashMap::new();
     let mut filled = HashMap::new();
@@ -252,8 +251,15 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
         let operand = statement.operand.unwrap_or("0");
 
         let word = match &statement.op {
-            Op::Data(radix) => value(operand, *radix, min_data, max_word)
-                .map(|data| if data < 0 { data + max_word + 1 } else { data }),
+            Op::Data(radix, kind) => {
+                let (min_data, max_data) = data_range(format.data_encoding, *kind, max_word);
+
+                value(operand, *radix, min_data, max_data).map(|data| match format.data_encoding {
+                    DataEncoding::TwosComplement if data < 0 => data + 0x1_0000,
+                    DataEncoding::Unsigned | DataEncoding::TwosComplement => data,
+                    DataEncoding::Lmc => data,
+                })
+            }
 
             Op::Instruction(Found::One(definition)) => {
                 match (definition.operand, statement.operand) {
@@ -312,6 +318,20 @@ pub fn assemble(text: &str, set: &InstructionSet) -> Result<(Vec<i32>, u16), Vec
         .collect())
 }
 
+fn data_range(encoding: DataEncoding, kind: DataKind, max_word: i32) -> (i32, i32) {
+    match (encoding, kind) {
+        (DataEncoding::Unsigned, _) => (0, max_word),
+        (DataEncoding::Lmc, DataKind::Hex) => (0, max_word),
+        (DataEncoding::Lmc, _) => (-999, 999),
+        (DataEncoding::TwosComplement, DataKind::Hex) => (0, max_word),
+        (DataEncoding::TwosComplement, DataKind::Decimal) => {
+            (i16::MIN as i32, i16::MAX as i32)
+        }
+        // DAT can also spell a raw word in the format's radix (for example, DAT FFE9).
+        (DataEncoding::TwosComplement, DataKind::Default) => (i16::MIN as i32, max_word),
+    }
+}
+
 // Memory as text that assembles back to the same words and entry point, without the trailing
 // zero cells.
 pub fn disassemble(memory: &[i32], entry_point: u16, set: &InstructionSet) -> String {
@@ -320,13 +340,39 @@ pub fn disassemble(memory: &[i32], entry_point: u16, set: &InstructionSet) -> St
         .rposition(|word| *word != 0)
         .map_or(0, |index| index + 1);
 
-    let mut text: String = memory[..length]
-        .iter()
-        .map(|&word| line(word, set) + "\n")
-        .collect();
+    const ZERO_GAP_THRESHOLD: usize = 4;
+    let mut lines = Vec::new();
+    let mut address = 0;
+    let mut first_statement = None;
 
-    // The first line is cell 0, where the program starts unless END says otherwise.
-    if entry_point != 0 {
+    while address < length {
+        if memory[address] == 0 {
+            let end = (address + 1..length)
+                .find(|&next| memory[next] != 0)
+                .unwrap_or(length);
+
+            if end - address > ZERO_GAP_THRESHOLD {
+                lines.push(format!("ORG {}", set.format.text(end as i32, 1)));
+                address = end;
+                continue;
+            }
+        }
+
+        first_statement.get_or_insert(address);
+        lines.push(line(memory[address], set));
+        address += 1;
+    }
+
+    let mut text = lines.join("\n");
+    if !text.is_empty() {
+        text.push('\n');
+    }
+
+    // A skipped leading zero run moves the first statement away from cell 0. Preserve the
+    // original entry point explicitly whenever it differs from that first statement.
+    if first_statement.is_some_and(|first| first != entry_point as usize)
+        || first_statement.is_none() && entry_point != 0
+    {
         text += &format!("END {}\n", set.format.text(entry_point.into(), 1));
     }
 
@@ -339,7 +385,13 @@ fn line(word: i32, set: &InstructionSet) -> String {
     let (code, operand) = set.split(word);
     // Not zero-padded: in hex a padded 0B or 0D would read as a prefix.
     let operand = format.text(operand, 1);
-    let data = format!("DAT {}", format.text(word, 1));
+    let data = match format.data_encoding {
+        DataEncoding::Lmc if word < 0 => format!("DAT {word}"),
+        DataEncoding::TwosComplement if word < 0 || word > i16::MAX as i32 => {
+            format!("DEC {}", word as u16 as i16)
+        }
+        _ => format!("DAT {}", format.text(word, 1)),
+    };
 
     set.definitions
         .iter()
@@ -359,7 +411,11 @@ fn line(word: i32, set: &InstructionSet) -> String {
             ]
         })
         // DEC and HEX for a set with an instruction called DAT.
-        .chain([data.clone(), format!("DEC {word}"), format!("HEX {word:X}")])
+        .chain([
+            data.clone(),
+            format!("DEC {word}"),
+            format!("HEX {word:X}"),
+        ])
         .find(|line| assemble(line, set).is_ok_and(|(words, _)| words == [word]))
         .unwrap_or(data)
 }
@@ -595,6 +651,58 @@ mod tests {
             assemble("DEC -23\nHEX FFE9", &InstructionSet::marie()),
             Ok((vec![0xFFE9, 0xFFE9], 0))
         );
+        assert_eq!(assemble("DAT -5", &InstructionSet::lmc()), Ok((vec![-5], 0)));
+    }
+
+    #[test]
+    fn signed_data_and_zero_gaps_round_trip_on_lmc_and_marie() {
+        let lmc = InstructionSet::lmc();
+        let lmc_memory = vec![901, 0, 0, 0, 0, 0, -5, 0, 123];
+        let lmc_text = disassemble(&lmc_memory, 0, &lmc);
+
+        assert!(lmc_text.contains("DAT -5\n"));
+        assert!(lmc_text.contains("ORG 6\n"));
+        round_trip(&lmc_memory, 0, &lmc);
+
+        let marie = InstructionSet::marie();
+        let mut marie_memory = vec![0; 0x107];
+        marie_memory[0x100] = 0x1100;
+        marie_memory[0x106] = 0xFFE9;
+        let marie_text = disassemble(&marie_memory, 0, &marie);
+
+        assert!(marie_text.contains("ORG 100\n"));
+        assert!(marie_text.contains("ORG 106\n"));
+        assert!(marie_text.contains("DEC -23\n"));
+        round_trip(&marie_memory, 0, &marie);
+
+    }
+
+    #[test]
+    fn signed_data_stays_in_the_format_range() {
+        for (text, set, expected) in [
+            (
+                "DAT -1000",
+                InstructionSet::lmc(),
+                "line 1: -1000 is out of range, -999 to 999",
+            ),
+            (
+                "DAT 1000",
+                InstructionSet::lmc(),
+                "line 1: 1000 is out of range, -999 to 999",
+            ),
+            (
+                "DEC -32769",
+                InstructionSet::marie(),
+                "line 1: -32769 is out of range, -8000 to 7FFF",
+            ),
+            (
+                "DEC 32768",
+                InstructionSet::marie(),
+                "line 1: 32768 is out of range, -8000 to 7FFF",
+            ),
+        ] {
+            assert_eq!(assemble(text, &set), Err(vec![expected.to_string()]));
+        }
     }
 
     #[test]

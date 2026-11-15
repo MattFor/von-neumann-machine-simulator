@@ -476,6 +476,27 @@ mod tests {
     }
 
     #[test]
+    fn lmc_asm_files_keep_negative_data() {
+        let path = std::env::temp_dir().join("vnm-test-negative-lmc.asm");
+        let set = InstructionSet::lmc();
+        let saved = Program {
+            name: "negative".to_string(),
+            entry_point: 0,
+            memory: vec![901, -5],
+            instruction_set: Some(set.clone()),
+        };
+
+        saved.save(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let loaded = Program::load(&path, &set).unwrap();
+        fs::remove_file(&path).unwrap();
+
+        assert!(text.contains("DAT -5\n"));
+        assert_eq!(loaded.memory, saved.memory);
+        assert_eq!(loaded.entry_point, saved.entry_point);
+    }
+
+    #[test]
     fn asm_files_report_the_first_mistake_and_how_many_more() {
         let error = load("mistakes.asm", "LOAD 1\nFOO\nBAR\n").unwrap_err();
 
