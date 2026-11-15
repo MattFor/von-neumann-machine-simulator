@@ -47,6 +47,8 @@ pub enum MicroOp {
     InsToPcIfZero,
     InsToPcIfNonNegative,
     InsToPcIfNegative,
+    InsToPcIfCarry,
+    InsToPcIfZeroFlag,
     InsToMc,
     McZero,
     PcToAb,
@@ -85,7 +87,7 @@ pub const FETCH: [MicroOp; 4] = [
 ];
 
 impl MicroOp {
-    pub const ALL: [MicroOp; 36] = [
+    pub const ALL: [MicroOp; 38] = [
         MicroOp::DbToRam,
         MicroOp::RamToDb,
         MicroOp::DbToIns,
@@ -95,6 +97,8 @@ impl MicroOp {
         MicroOp::InsToPcIfZero,
         MicroOp::InsToPcIfNonNegative,
         MicroOp::InsToPcIfNegative,
+        MicroOp::InsToPcIfCarry,
+        MicroOp::InsToPcIfZeroFlag,
         MicroOp::InsToMc,
         MicroOp::McZero,
         MicroOp::PcToAb,
@@ -179,6 +183,15 @@ impl MicroOp {
                 "Jump only if the accumulator is zero or positive",
             ),
             MicroOp::InsToPcIfNegative => ("<0:ins->pc", "Jump only if the accumulator is negative"),
+            MicroOp::InsToPcIfCarry => (
+                "cf:ins->pc",
+                "Jump only if the carry flag is set: the last plus overflowed, or the last minus \
+                 borrowed nothing",
+            ),
+            MicroOp::InsToPcIfZeroFlag => (
+                "zf:ins->pc",
+                "Jump only if the zero flag is set: the last plus or minus gave zero",
+            ),
             MicroOp::InsToMc => (
                 "ins->mc",
                 "Decode: carry on with the micro steps of the instruction in the instruction register",
@@ -213,8 +226,15 @@ impl MicroOp {
             MicroOp::AccZero => ("acc:=0", "Set the accumulator to zero"),
             MicroOp::AccInc => ("acc++", "Add one to the accumulator"),
             MicroOp::AccDec => ("acc--", "Subtract one from the accumulator"),
-            MicroOp::Plus => ("plus", "Add the data bus to the accumulator"),
-            MicroOp::Minus => ("minus", "Subtract the data bus from the accumulator"),
+            MicroOp::Plus => (
+                "plus",
+                "Add the data bus to the accumulator; on a machine with flags it sets carry and zero",
+            ),
+            MicroOp::Minus => (
+                "minus",
+                "Subtract the data bus from the accumulator; on a machine with flags it sets carry \
+                 and zero",
+            ),
             MicroOp::Times => ("times", "Multiply the accumulator by the data bus"),
             MicroOp::Divide => (
                 "divide",
@@ -623,8 +643,8 @@ impl InstructionSet {
         }
     }
 
-    // The built-in sets: standard, Johnny, Bonsai, LMC, MARIE and CARDIAC.
-    pub fn presets() -> [Self; 6] {
+    // The built-in sets: standard, Johnny, Bonsai, LMC, MARIE, CARDIAC and SAP-1.
+    pub fn presets() -> [Self; 7] {
         [
             Self::default(),
             Self::johnny(),
@@ -632,6 +652,7 @@ impl InstructionSet {
             Self::lmc(),
             Self::marie(),
             Self::cardiac(),
+            Self::sap1(),
         ]
     }
 
@@ -844,6 +865,43 @@ impl InstructionSet {
             (5, "OUT", vec![InsToAb, RamToDb, DbToOut, PcInc, McZero]),
             (8, "JMP", vec![PcInc, AbLast, ReturnToDb, DbToRam, InsToPc, McZero]),
             (9, "HRS", vec![InsToPc, Stop, McZero]),
+        ] {
+            set.definitions.push(Definition {
+                code,
+                mnemonic: mnemonic.to_string(),
+                opcode: Opcode::Custom,
+                micro,
+                ..Default::default()
+            });
+        }
+
+        set.definitions.sort_by_key(|definition| definition.code);
+        set
+    }
+
+    // Ben Eater's SAP-1, with the conditional jumps from the end of his series.
+    pub fn sap1() -> Self {
+        use MicroOp::*;
+
+        let mut set = Self::preset(
+            "SAP-1",
+            Format::sap1(),
+            &[
+                (0, "NOP", Opcode::Nop),
+                (1, "LDA", Opcode::Load),
+                (2, "ADD", Opcode::Add),
+                (3, "SUB", Opcode::Sub),
+                (4, "STA", Opcode::Store),
+                (6, "JMP", Opcode::Jump),
+                (14, "OUT", Opcode::Output),
+                (15, "HLT", Opcode::Halt),
+            ],
+        );
+
+        for (code, mnemonic, micro) in [
+            (5, "LDI", vec![InsToDb, DbToAcc, PcInc, McZero]),
+            (7, "JC", vec![PcInc, InsToPcIfCarry, McZero]),
+            (8, "JZ", vec![PcInc, InsToPcIfZeroFlag, McZero]),
         ] {
             set.definitions.push(Definition {
                 code,

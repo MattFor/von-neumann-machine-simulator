@@ -13,8 +13,8 @@ Without arguments the window opens. `run` runs a program (.json, .ram, .asm or .
 to a halt or the step limit, and prints its output to stdout, one value per line.
 
 Options:
-  --machine <name>  standard, johnny, bonsai, lmc, marie or cardiac. Default: the set in the file,
-                    Johnny for .ram. An .asm file needs it
+  --machine <name>  standard, johnny, bonsai, lmc, marie, cardiac or sap1. Default: the set in
+                    the file, Johnny for .ram. An .asm file needs it
   --input <values>  numbers for IN to read, separated by commas: --input 1,2,3
   --max-steps <n>   how many instructions to run at most (default 100000)
   --trace           print every instruction to stderr: address, word, mnemonic, accumulator
@@ -25,7 +25,7 @@ Exit codes: 0 halted, 1 bad arguments or file, 2 step limit reached,
 ";
 
 // In the order of InstructionSet::presets.
-const MACHINES: [&str; 6] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac"];
+const MACHINES: [&str; 7] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac", "sap1"];
 
 struct Options {
     path: String,

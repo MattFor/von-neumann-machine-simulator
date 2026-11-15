@@ -661,6 +661,31 @@ mod tests {
     }
 
     #[test]
+    fn a_sap1_program_round_trips_and_runs() {
+        let set = InstructionSet::sap1();
+        let (memory, entry_point, output) = run(
+            &[
+                "; counts down from 3 to the zero flag",
+                "        LDI 3",
+                "loop:   OUT",
+                "        SUB one",
+                "        JZ done",
+                "        JMP loop",
+                "done:   OUT",
+                "        HLT",
+                "one:    DAT 1",
+            ],
+            set.clone(),
+            0,
+        );
+
+        assert_eq!(entry_point, 0);
+        assert_eq!(memory, [0x53, 0xe0, 0x37, 0x85, 0x61, 0xe0, 0xf0, 1]);
+        assert!(disassemble(&memory, entry_point, &set).starts_with("LDI 3\nOUT 0\nSUB 7\n"));
+        assert_eq!(output, "3\n2\n1\n0\n");
+    }
+
+    #[test]
     fn numbers_are_in_the_radix_unless_a_prefix_says_otherwise() {
         let text = "a: DAT 10\nDAT 0x10\nDAT 0d10\nDAT 0b10\nDAT 0B11\nDAT\nLOAD a";
 
