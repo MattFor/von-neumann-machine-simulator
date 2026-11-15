@@ -75,15 +75,12 @@ fn validate_ram_program(program: &Program, set: &InstructionSet) -> anyhow::Resu
     Ok(())
 }
 
-// Kept available for the example selector added in the next UI change.
-#[allow(dead_code)]
 pub struct Example {
     pub name: &'static str,
     pub preset: InstructionSet,
     pub program: Program,
 }
 
-#[allow(dead_code)]
 pub fn examples() -> Vec<Example> {
     fn example(
         name: &'static str,

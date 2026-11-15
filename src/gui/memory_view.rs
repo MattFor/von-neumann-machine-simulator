@@ -1,8 +1,8 @@
 use egui::Ui;
 
 use super::radix_drag;
-use crate::machine::Machine;
-use crate::utilities::parse_value;
+use crate::assembler::number;
+use crate::machine::{Definition, InstructionSet, Machine};
 
 const HIGHLIGHT_DARK: egui::Color32 = egui::Color32::from_rgb(55, 30, 0);
 const HIGHLIGHT_LIGHT: egui::Color32 = egui::Color32::from_rgb(255, 225, 170);
@@ -31,9 +31,27 @@ const COLUMN_HEADERS: [Header; 4] = [
     },
     Header {
         label: "Val",
-        description: "The whole word as one number (hover a cell to read it as an instruction)",
+        description: "The number the cell holds, negative ones included (hover a cell to read it as an instruction)",
     },
 ];
+
+// The code and operand a fetch of the cell gives, and which definition the executor runs for them.
+pub fn decode(set: &InstructionSet, cell: i32) -> (i32, i32, Option<usize>) {
+    let (code, operand) = set.split(set.format.fetched(cell));
+    let found = set.find_instruction(code, operand);
+    let index = set
+        .definitions
+        .iter()
+        .position(|definition| found.is_some_and(|found| std::ptr::eq(found, definition)));
+
+    (code, operand, index)
+}
+
+// Picking an instruction keeps the operand, unless the instruction has a fixed one.
+// ponytail: an instruction without one can then decode as another of its code that takes this operand.
+pub fn pick(set: &InstructionSet, definition: &Definition, operand: i32) -> i32 {
+    set.join(definition.code, definition.operand.unwrap_or(operand))
+}
 
 // With `by_hand` the address bus can be set and the cell it points at is shown.
 pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
@@ -52,11 +70,19 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
 
     memory_grid_panel(ui, machine, footer_height);
 
-    let raw = machine.memory.read(machine.cpu.mar as usize);
+    let format = machine.instruction_set.format;
+    let value = format.value(machine.memory.read(machine.cpu.mar as usize));
+    let text = match format.radix {
+        10 => value.to_string(),
+        _ => format!(
+            "{} = {value}",
+            format.text(format.word(value), format.code_digits + format.operand_digits)
+        ),
+    };
 
     ui.add_sized(
         [ui.available_width(), ui.spacing().interact_size.y],
-        egui::Label::new(egui::RichText::new(format!("{raw}")).monospace()),
+        egui::Label::new(egui::RichText::new(text).monospace()),
     )
     .on_hover_text("Value of the cell the address bus points at");
 
@@ -77,14 +103,16 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
         let button = ui
             .button("Set address bus")
             .on_hover_text(
-                "Put this address (decimal or 0x hex) on the address bus; ram->db and db->ram work on that cell",
+                "Put this address (in the machine's radix, or after 0x, 0b or 0d) on the address bus; \
+                 ram->db and db->ram work on that cell",
             );
 
-        let last = machine.instruction_set.format.cells() as i32 - 1;
+        let format = machine.instruction_set.format;
+        let last = format.cells() as i32 - 1;
 
         if (button.clicked() || enter)
             && let Some(parsed_address) =
-                parse_value(&address_bus).filter(|address| (0..=last).contains(address))
+                number(address_bus.trim(), format.radix).filter(|address| (0..=last).contains(address))
         {
             machine.cpu.mar = parsed_address as u16;
             ui.data_mut(|data| data.insert_temp(egui::Id::unique(SCROLL_TO), parsed_address as usize));
@@ -96,7 +124,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let pc = machine.cpu.pc as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
     let set = machine.instruction_set.clone();
-    let (_, max_operand, max_word) = set.limits();
+    let (max_code, max_operand, _) = set.limits();
     let cells = set.format.cells();
     let column_width = (ui.available_width() - 3.0 * ui.spacing().item_spacing.x) / 4.0; // 4 columns, 3 gaps
 
@@ -157,11 +185,10 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                 })
                 .show(ui, |ui| {
                     for address in rows {
-                        let raw = machine.memory.read(address);
+                        let cell = machine.memory.read(address);
 
-                        let (mut code, mut operand) = set.split(raw);
-                        let unchanged = set.join(code, operand);
-                        let mut value = raw;
+                        let (code, mut operand, decoded) = decode(&set, cell);
+                        let mut value = set.format.value(cell);
                         let shown_address = set.format.operand_text(address as i32);
 
                         let breakpoint = machine.breakpoints.contains(&(address as u16));
@@ -187,17 +214,29 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                             machine.breakpoints.insert(address as u16);
                         }
 
+                        let mut picked = None;
                         let combo_response = egui::ComboBox::from_id_salt(("opcode", address))
                             .width(column_width)
-                            .selected_text(set.mnemonic(code))
+                            .selected_text(set.mnemonic_for(code, operand))
                             .show_ui(ui, |ui| {
-                                for definition in &set.definitions {
-                                    let shown_code = set.format.code_text(definition.code);
-                                    let response = ui.selectable_value(
-                                        &mut code,
-                                        definition.code,
+                                for (index, definition) in set.definitions.iter().enumerate() {
+                                    // A fixed operand is part of the instruction, like LMC's 9.02 OUT.
+                                    let shown_code = match definition.operand {
+                                        Some(fixed) => format!(
+                                            "{}.{}",
+                                            set.format.code_text(definition.code),
+                                            set.format.operand_text(fixed)
+                                        ),
+                                        None => set.format.code_text(definition.code),
+                                    };
+                                    let response = ui.selectable_label(
+                                        decoded == Some(index),
                                         format!("{shown_code} - {}", definition.mnemonic),
                                     );
+
+                                    if response.clicked() {
+                                        picked = Some(definition);
+                                    }
 
                                     response.on_hover_text(format!(
                                         "{} (code {shown_code})\n{}",
@@ -207,33 +246,41 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
                                 }
                             });
 
-                        if let Some(definition) = set.find(code) {
+                        if let Some(index) = decoded {
                             combo_response
                                 .response
-                                .on_hover_text(definition.opcode.description());
+                                .on_hover_text(set.definitions[index].opcode.description());
                         }
 
-                        ui.add_sized(
-                            [column_width, row_height],
-                            radix_drag(&mut operand, set.format, set.format.operand_digits)
-                                .range(0..=max_operand),
-                        );
+                        // A code past the last one has no words to give another operand.
+                        let operand_changed = ui
+                            .add_enabled_ui(code <= max_code, |ui| {
+                                ui.add_sized(
+                                    [column_width, row_height],
+                                    radix_drag(&mut operand, set.format, set.format.operand_digits)
+                                        .range(0..=max_operand),
+                                )
+                            })
+                            .inner
+                            .changed();
 
-                        ui.add_sized(
-                            [column_width, row_height],
-                            egui::DragValue::new(&mut value)
-                                .range(0..=max_word)
-                                .clamp_existing_to_range(false),
-                        )
-                        .on_hover_text(machine.describe(raw));
+                        let value_changed = ui
+                            .add_sized(
+                                [column_width, row_height],
+                                egui::DragValue::new(&mut value)
+                                    .range(set.values())
+                                    .clamp_existing_to_range(false),
+                            )
+                            .on_hover_text(machine.describe(set.format.fetched(cell)))
+                            .changed();
 
-                        let updated = set.join(code, operand);
-
-                        // Compared field by field so that just showing a cell never rewrites it.
-                        if updated != unchanged {
-                            machine.memory.write(address, updated);
-                        } else if value != raw {
-                            machine.memory.write(address, value);
+                        // Only an edit writes, so that just showing a cell never rewrites it.
+                        if let Some(definition) = picked {
+                            machine.memory.write(address, pick(&set, definition, operand));
+                        } else if operand_changed {
+                            machine.memory.write(address, set.join(code, operand));
+                        } else if value_changed {
+                            machine.memory.write(address, set.format.word(value));
                         }
 
                         ui.end_row();
@@ -250,5 +297,48 @@ fn print_headers(ui: &mut Ui, row_height: f32, column_width: f32) {
         );
 
         r.on_hover_text(header.description);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn mnemonic(set: &InstructionSet, cell: i32) -> Option<&str> {
+        decode(set, cell).2.map(|index| set.definitions[index].mnemonic.as_str())
+    }
+
+    #[test]
+    fn cells_are_decoded_by_code_and_operand_like_the_executor() {
+        let (lmc, marie) = (InstructionSet::lmc(), InstructionSet::marie());
+
+        assert_eq!(mnemonic(&lmc, 901), Some("INP"));
+        assert_eq!(mnemonic(&lmc, 902), Some("OUT"));
+        assert_eq!(mnemonic(&lmc, 0), Some("HLT"));
+        // Runs as no instruction, so it is not HLT.
+        assert_eq!(mnemonic(&lmc, 5), None);
+        assert_eq!(mnemonic(&lmc, -1), None);
+        assert_eq!(mnemonic(&marie, 0x8800), Some("Skipcond >0"));
+        assert_eq!(mnemonic(&marie, 0x8401), Some("Skipcond =0"));
+        assert_eq!(mnemonic(&marie, 0x8000), Some("Skipcond <0"));
+        assert_eq!(mnemonic(&InstructionSet::default(), 0x010a), Some("LOAD"));
+    }
+
+    fn named<'a>(set: &'a InstructionSet, name: &str) -> &'a Definition {
+        set.definitions
+            .iter()
+            .find(|definition| definition.mnemonic == name)
+            .unwrap()
+    }
+
+    #[test]
+    fn picking_an_instruction_writes_its_fixed_operand() {
+        let (lmc, marie) = (InstructionSet::lmc(), InstructionSet::marie());
+
+        assert_eq!(pick(&lmc, named(&lmc, "OUT"), 0), 902);
+        assert_eq!(pick(&lmc, named(&lmc, "INP"), 2), 901);
+        assert_eq!(pick(&lmc, named(&lmc, "ADD"), 42), 142);
+        assert_eq!(pick(&marie, named(&marie, "Skipcond =0"), 0x123), 0x8400);
+        assert_eq!(mnemonic(&lmc, pick(&lmc, named(&lmc, "OUT"), 0)), Some("OUT"));
     }
 }

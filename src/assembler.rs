@@ -79,7 +79,7 @@ fn op<'a>(set: &'a InstructionSet, word: &str) -> Option<Op<'a>> {
 }
 
 // A number in the radix, unless 0x, 0b or 0d says otherwise.
-fn number(token: &str, radix: u32) -> Option<i32> {
+pub fn number(token: &str, radix: u32) -> Option<i32> {
     let (radix, digits) = match token.get(..2).map(str::to_ascii_lowercase).as_deref() {
         Some("0x") => (16, &token[2..]),
         Some("0b") => (2, &token[2..]),

@@ -8,13 +8,22 @@ use eframe::egui;
 use std::time::Instant;
 
 use crate::debugger::debug::Debug;
-use gui_state::{AppState, MAX_SPEED, MIN_SPEED, UiMode};
+use gui_state::{AppState, MAX_SPEED, MIN_SPEED, PRESETS, UiMode, preset_of};
 
 const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
 
+const CUSTOM: (&str, &str) = (
+    "Custom",
+    "The instruction set or its format matches none of the machines; pick the machine again \
+     to get its set back",
+);
+
 // Remembered between launches: speed, the memory, registers, CPU, console and control unit
-// toggles, then the advanced view and Johnny mode.
+// toggles, then the advanced view and whether the words are Johnny's, for older builds.
 type Settings = (usize, bool, bool, bool, bool, bool, bool, bool);
+
+// The picked machine, under a key of its own so that older settings still load.
+const PRESET_KEY: &str = "preset";
 
 pub struct VnmApp {
     pub state: AppState,
@@ -25,6 +34,10 @@ impl VnmApp {
         let mut state = AppState::new();
 
         crate::gui::theme::apply(&cc.egui_ctx);
+
+        let picked = cc
+            .storage
+            .and_then(|storage| eframe::get_value::<usize>(storage, PRESET_KEY));
 
         if let Some((speed, memory, registers, cpu, console, control_unit, advanced, johnny)) = cc
             .storage
@@ -38,8 +51,12 @@ impl VnmApp {
             state.show_control_unit = control_unit;
             state.advanced = advanced;
 
-            if johnny {
-                state.toggle_johnny();
+            // Settings from before the picker only said whether it was Johnny mode, preset 1.
+            if let Some(preset) = picked
+                .or(johnny.then_some(1))
+                .filter(|preset| *preset < PRESETS.len())
+            {
+                state.switch(preset);
                 state.status_message.clear();
             }
         }
@@ -59,13 +76,16 @@ impl eframe::App for VnmApp {
             state.show_console,
             state.show_control_unit,
             state.advanced,
-            state.johnny(),
+            state.machine.instruction_set.format.johnny_compatible(),
         );
 
         eframe::set_value(storage, eframe::APP_KEY, &settings);
+        eframe::set_value(storage, PRESET_KEY, &state.preset);
     }
 
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        let layout = self.state.layout();
+
         egui::Panel::top("top_menu").show(ui, |ui| {
             ui.horizontal(|ui| {
                 for (mode, label) in [
@@ -92,19 +112,35 @@ impl eframe::App for VnmApp {
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     egui::widgets::global_theme_preference_buttons(ui);
 
-                    // Framed, so that they read as switches and not as text.
-                    if ui
-                        .add(egui::Button::new("Johnny mode").selected(self.state.johnny()))
-                        .on_hover_text(
-                            "Work like the Johnny simulator: decimal words (two digits of \
-                             instruction, three of address), 1000 cells and Johnny's instructions. \
-                             Opens Johnny .ram and .mc files. Each mode keeps its own program",
-                        )
-                        .clicked()
-                    {
-                        self.state.toggle_johnny();
-                    }
+                    let current = preset_of(&self.state.machine.instruction_set);
+                    let (label, hint) = current.map_or(CUSTOM, |preset| PRESETS[preset]);
 
+                    egui::ComboBox::from_id_salt("machine_picker")
+                        .selected_text(label)
+                        .show_ui(ui, |ui| {
+                            for (preset, (name, hint)) in PRESETS.into_iter().enumerate() {
+                                if ui
+                                    .selectable_label(current == Some(preset), name)
+                                    .on_hover_text(hint)
+                                    .clicked()
+                                {
+                                    self.state.pick(preset);
+                                }
+                            }
+
+                            if current.is_none() {
+                                ui.selectable_label(true, CUSTOM.0).on_hover_text(CUSTOM.1);
+                            }
+                        })
+                        .response
+                        .on_hover_text(format!(
+                            "The machine to simulate. {hint}. Each machine keeps its own program, \
+                             so switching loses nothing"
+                        ));
+
+                    ui.label("Machine");
+
+                    // Framed, so that it reads as a switch and not as text.
                     if ui
                         .add(egui::Button::new("Advanced").selected(self.state.advanced))
                         .on_hover_text(
@@ -213,6 +249,12 @@ impl eframe::App for VnmApp {
             self.state.sync_running();
 
             ui.ctx().request_repaint();
+        }
+
+        // A toggle drawn after the panels it moves would leave them a frame behind, so the
+        // pass is run again from the new state before anything is shown.
+        if self.state.layout() != layout {
+            ui.ctx().request_discard("the layout changed");
         }
     }
 }

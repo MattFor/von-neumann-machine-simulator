@@ -1,6 +1,6 @@
 use super::{controls, gui_state::AppState};
 use crate::gui::{control_unit_view, cpu_view, data_bus_view, memory_view, register_view};
-use egui::Ui;
+use egui::{Rect, Ui, pos2};
 
 // A card filling the rectangle it is given; debug builds outline it in red.
 fn panel(ui: &mut Ui, rect: egui::Rect, add: impl FnOnce(&mut Ui)) {
@@ -87,64 +87,36 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
     ui.add_space(4.0);
 
-    egui::Panel::bottom("data_bus_panel")
-        .exact_size(data_bus_view::HEIGHT)
-        .frame(egui::Frame::NONE)
-        .show_separator_line(false)
-        .show(ui, |ui| {
-            data_bus_view::show(
-                ui,
-                &mut state.machine,
-                memory,
-                registers || control_unit || cpu,
-                advanced,
-            );
-        });
+    let (cards, bus) = layout(
+        ui.available_rect_before_wrap(),
+        [memory, registers, control_unit, cpu],
+        ui.spacing().item_spacing.x,
+    );
+    let [memory, registers, control_unit, cpu] = cards;
 
-    // The memory table needs the most room, the registers the least.
-    let weights = [
-        (memory, 1.4),
-        (registers, 0.8),
-        (control_unit, 1.0),
-        (cpu, 1.0),
-    ];
-    let shown = weights.iter().filter(|(shown, _)| *shown);
-    let gap = ui.spacing().item_spacing.x;
-    let gaps = gap * (shown.clone().count() as f32 - 1.0);
-    let total: f32 = shown.map(|(_, weight)| weight).sum();
+    // The accumulator's transfers go to the CPU card, or to the registers that show it.
+    data_bus_view::show(
+        ui,
+        bus,
+        &mut state.machine,
+        memory,
+        cpu.or(registers),
+        advanced,
+    );
 
-    let area = ui.available_rect_before_wrap();
-    let mut left = area.left();
-    let mut column = |index: usize| {
-        let width = (area.width() - gaps) * weights[index].1 / total;
-        let rect = egui::Rect::from_min_size(
-            egui::pos2(left, area.top()),
-            egui::vec2(width, area.height()),
-        );
-
-        left += width + gap;
-        rect
-    };
-
-    if memory {
-        let rect = column(0);
-
+    if let Some(rect) = memory {
         panel(ui, rect, |ui| {
             memory_view::show(ui, &mut state.machine, advanced);
         });
     }
 
-    if registers {
-        let rect = column(1);
-
+    if let Some(rect) = registers {
         scrolling(ui, rect, "registers_scroll", |ui| {
             register_view::show(ui, &state.machine);
         });
     }
 
-    if control_unit {
-        let rect = column(2);
-
+    if let Some(rect) = control_unit {
         scrolling(ui, rect, "control_unit_scroll", |ui| {
             if let Some(message) = control_unit_view::show(ui, &mut state.machine) {
                 state.status_message = message;
@@ -152,11 +124,136 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         });
     }
 
-    if cpu {
-        let rect = column(3);
-
+    if let Some(rect) = cpu {
         scrolling(ui, rect, "cpu_scroll", |ui| {
             cpu_view::show(ui, &mut state.machine);
         });
+    }
+}
+
+// The data bus along the bottom of `area` and the shown cards side by side above it, the memory
+// widest: memory, registers, control unit, CPU. The arrows are placed from these same rectangles,
+// so they cannot point at a card from another frame or at one that is hidden.
+pub fn layout(area: Rect, shown: [bool; 4], gap: f32) -> ([Option<Rect>; 4], Rect) {
+    let weights = [1.4, 0.8, 1.0, 1.0];
+    let bus_top = (area.bottom() - data_bus_view::HEIGHT).max(area.top());
+    let count = shown.iter().filter(|shown| **shown).count();
+    let total: f32 = (0..4)
+        .filter(|index| shown[*index])
+        .map(|index| weights[index])
+        .sum();
+    let width = (area.width() - gap * count.saturating_sub(1) as f32).max(0.0);
+
+    let mut left = area.left();
+    let cards = std::array::from_fn(|index| {
+        shown[index].then(|| {
+            let right = left + width * weights[index] / total;
+            let card = Rect::from_min_max(pos2(left, area.top()), pos2(right, bus_top));
+
+            left = right + gap;
+            card
+        })
+    });
+
+    (cards, Rect::from_min_max(pos2(area.left(), bus_top), area.max))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::gui_state::PRESETS;
+    use crate::machine::MicroOp;
+    use egui::vec2;
+
+    #[test]
+    fn every_arrow_meets_a_shown_card_and_no_card_covers_another_or_the_bus() {
+        for size in [vec2(300.0, 150.0), vec2(830.0, 260.0), vec2(1160.0, 500.0), vec2(2500.0, 1400.0)] {
+            let area = Rect::from_min_size(pos2(8.0, 90.0), size);
+
+            for mask in 0..16 {
+                let shown: [bool; 4] = std::array::from_fn(|index| mask & (1 << index) != 0);
+                let (cards, bus) = layout(area, shown, 8.0);
+                let [memory, registers, _, cpu] = cards;
+                let acc = cpu.or(registers);
+
+                assert!(area.contains_rect(bus) && (bus.height() - data_bus_view::HEIGHT).abs() < 0.01);
+
+                for (index, card) in cards.iter().enumerate() {
+                    assert_eq!(card.is_some(), shown[index], "{mask} {size:?}");
+
+                    let Some(card) = card else {
+                        continue;
+                    };
+
+                    assert!(area.expand(0.01).contains_rect(*card) && card.bottom() <= bus.top());
+
+                    for other in cards[index + 1..].iter().flatten() {
+                        assert!(!card.intersects(*other), "{mask} {size:?}");
+                    }
+                }
+
+                let arrows = data_bus_view::transfers(bus, memory, acc);
+
+                assert_eq!(arrows.len(), 2 * (memory.is_some() as usize + acc.is_some() as usize));
+
+                for (op, arrow) in arrows {
+                    let card = match op {
+                        MicroOp::RamToDb | MicroOp::DbToRam => memory,
+                        _ => acc,
+                    }
+                    .unwrap();
+
+                    assert!(arrow.left() >= card.left() - 0.01 && arrow.right() <= card.right() + 0.01);
+                    assert!(arrow.top() >= bus.top() && arrow.bottom() <= bus.bottom());
+                }
+            }
+        }
+    }
+
+    // Draws the tabs without a window for every view of every machine, so none of them panics.
+    #[test]
+    fn every_view_of_every_machine_draws() {
+        let ctx = egui::Context::default();
+        let mut state = AppState::new();
+        let input = egui::RawInput {
+            screen_rect: Some(Rect::from_min_size(pos2(0.0, 0.0), vec2(1180.0, 760.0))),
+            ..Default::default()
+        };
+        let draw = |state: &mut AppState, tab: fn(&mut Ui, &mut AppState)| {
+            ctx.run_ui(input.clone(), |ui| tab(ui, state))
+                .textures_delta
+                .clear();
+        };
+
+        // Every preset, then a binary machine with 12-digit words.
+        for preset in 0..=PRESETS.len() {
+            if preset < PRESETS.len() {
+                state.pick(preset);
+            } else {
+                state.pick(0);
+
+                let set = &mut state.machine.instruction_set;
+                set.definitions.retain(|definition| definition.code < 16);
+                set.format.radix = 2;
+                set.format.code_digits = 4;
+                set.format.operand_digits = 8;
+                set.check().unwrap();
+            }
+
+            state.machine.memory.write(0, -1);
+
+            for mask in 0..32 {
+                state.advanced = mask & 1 != 0;
+                state.show_memory = mask & 2 != 0;
+                state.show_registers = mask & 4 != 0;
+                state.show_control_unit = mask & 8 != 0;
+                state.show_cpu = mask & 16 != 0;
+
+                draw(&mut state, show);
+            }
+
+            draw(&mut state, super::super::instruction_mode::show);
+            draw(&mut state, |ui, state| crate::gui::guide_view::show(ui, &state.machine));
+        }
     }
 }

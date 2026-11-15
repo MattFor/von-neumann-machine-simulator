@@ -163,6 +163,33 @@ impl Format {
         i32::from_str_radix(text.trim(), self.radix).ok()
     }
 
+    // A word as the number it stands for: MARIE's FFFF is -1.
+    pub fn value(&self, word: i32) -> i32 {
+        match self.data_encoding {
+            DataEncoding::TwosComplement => word as u16 as i16 as i32,
+            DataEncoding::Unsigned | DataEncoding::Lmc => word,
+        }
+    }
+
+    // A number as the word that holds it, so -1 is FFFF on MARIE.
+    pub fn word(&self, value: i32) -> i32 {
+        match self.data_encoding {
+            DataEncoding::TwosComplement => value as u16 as i32,
+            DataEncoding::Unsigned | DataEncoding::Lmc => value,
+        }
+    }
+
+    // What a fetch of this cell leaves in the instruction register: ram->db, then db->ins.
+    pub fn fetched(&self, cell: i32) -> i32 {
+        let bus = match self.data_encoding {
+            DataEncoding::Unsigned => cell.clamp(0, 0xffff),
+            DataEncoding::TwosComplement => self.value(cell),
+            DataEncoding::Lmc => cell.clamp(-999, 999),
+        };
+
+        bus as u16 as i32
+    }
+
     // The registers are 16 bits wide, so every word and address has to fit in them.
     pub fn check(&self) -> anyhow::Result<()> {
         anyhow::ensure!(
@@ -233,6 +260,21 @@ mod tests {
         assert_eq!(octal.text(0, 0), "0");
         assert_eq!(octal.parse(" 777 "), Some(511));
         assert_eq!(octal.parse("8"), None);
+    }
+
+    #[test]
+    fn words_and_numbers_follow_the_data_encoding() {
+        let marie = Format::marie();
+        let lmc = Format::lmc();
+
+        assert_eq!(marie.value(0xffff), -1);
+        assert_eq!(marie.word(-1), 0xffff);
+        assert_eq!(marie.value(0x7fff), 0x7fff);
+        assert_eq!(lmc.value(-5), -5);
+        assert_eq!(lmc.word(-5), -5);
+        assert_eq!(Format::default().word(0x1234), 0x1234);
+        assert_eq!(marie.fetched(0x8400), 0x8400);
+        assert_eq!(lmc.fetched(-1), 0xffff);
     }
 
     #[test]

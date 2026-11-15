@@ -1,9 +1,10 @@
 use std::fs;
+use std::ops::RangeInclusive;
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
-use super::{Format, UnknownCode};
+use super::{DataEncoding, Format, UnknownCode};
 use crate::utilities::read_text;
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -309,7 +310,7 @@ impl Opcode {
         }
     }
 }
-#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 pub struct Definition {
     pub code: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -335,7 +336,7 @@ impl Definition {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(from = "SavedSet")]
 pub struct InstructionSet {
     pub name: String,
@@ -452,15 +453,17 @@ impl InstructionSet {
         (codes - 1, self.operands() - 1, codes * self.operands() - 1)
     }
 
-    pub fn free_code(&self) -> Option<i32> {
-        (0..=self.limits().0).find(|code| self.find(*code).is_none())
+    // The numbers a cell holds, the way a read puts them on the data bus.
+    pub fn values(&self) -> RangeInclusive<i32> {
+        match self.format.data_encoding {
+            DataEncoding::Unsigned => 0..=self.limits().2,
+            DataEncoding::TwosComplement => i16::MIN as i32..=i16::MAX as i32,
+            DataEncoding::Lmc => -999..=999,
+        }
     }
 
-    pub fn mnemonic(&self, code: i32) -> String {
-        self.find(code).map_or_else(
-            || format!("{} - ?", self.format.code_text(code)),
-            |definition| definition.mnemonic.clone(),
-        )
+    pub fn free_code(&self) -> Option<i32> {
+        (0..=self.limits().0).find(|code| self.find(*code).is_none())
     }
 
     pub fn load(path: &Path) -> anyhow::Result<Self> {

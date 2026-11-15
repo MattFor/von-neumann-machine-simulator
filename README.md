@@ -6,13 +6,13 @@ A desktop simulator of a simple accumulator machine: memory, registers, a CPU an
 
 ## Usage
 
-Click **Example** to load a small countdown program, then **Run** or **Step**.
-The **Guide** tab explains everything in the app, and every button has a tooltip.
+Pick a program from **Example**, then **Run** or **Step**. There is one for every
+machine, and it loads on its machine. The **Guide** tab explains everything in the
+app, and every button has a tooltip.
 
 The app starts in a simple view: memory, registers and the data bus. **Advanced**
 (top right) adds the control unit, the buttons to drive the machine by hand and the
-view switches. **Johnny mode** next to it makes the machine work like the
-[Johnny simulator](https://github.com/Laubersheini/johnny).
+view switches. **Machine** next to it picks the machine to simulate.
 
 | Key      | Action                            |
 | -------- | --------------------------------- |
@@ -25,10 +25,11 @@ view switches. **Johnny mode** next to it makes the machine work like the
 
 The keys work on the Machine tab.
 
-- **Memory**: each cell is a 16-bit word, the high byte is the instruction code and
-  the low byte is the operand. Edit a cell through its instruction, its operand or
-  its whole value (`Val`). The orange row is the program counter and the view
-  follows it, the blue row is the cell the address bus points at.
+- **Memory**: each cell is one word, an instruction code and then an operand. Edit a
+  cell through its instruction, its operand or the number it holds (`Val`, negative
+  numbers included). The instruction column shows what the cell runs as. The orange
+  row is the program counter and the view follows it, the blue row is the cell the
+  address bus points at.
 - **Breakpoints**: click an address to toggle one. Run stops when the program
   counter reaches it; press Run again to carry on.
 - **Registers**: the ones the last step changed are highlighted.
@@ -40,18 +41,40 @@ The keys work on the Machine tab.
   buttons you press into a new instruction.
 - **Instruction Set**: rename instructions, change their codes or add your own
   aliases, and save the set as JSON. An instruction set to `Custom` has its micro
-  steps edited right there.
-- **Johnny mode**: decimal words (two digits of instruction code, three of operand),
-  1000 cells and Johnny's instructions. Each mode keeps its own program, so switching
-  loses nothing. **Open Program** reads Johnny's `.ram` files and **Open Set** its
-  `.mc` microcode files, both switch to Johnny mode by themselves. Saving a program
-  under a name ending in `.ram` writes a Johnny file. **Bonsai** on the Instruction
-  Set tab loads Johnny's minimal set.
+  steps edited right there. An instruction can have a fixed operand, like LMC's
+  `INP` (901) and `OUT` (902), and a mask, like MARIE's `Skipcond`.
+- **Format**, on the Instruction Set tab: the radix, the digits of code and operand,
+  how many codes and cells there are, the accumulator range, how negative numbers
+  are stored, and what an unknown code or the end of memory does. A format the
+  machine can't hold is not applied, and the tab says why.
 
-Speed, visible panels, the view, the mode, theme and window size are remembered
+### Machines
+
+The **Machine** picker has five presets. Each keeps its own program, so switching
+loses nothing.
+
+| Machine             | Words                                                       |
+| ------------------- | ----------------------------------------------------------- |
+| Standard            | Hex: a byte of code, a byte of operand. 256 cells           |
+| Johnny              | Decimal: two digits of code, three of operand. 1000 cells   |
+| Bonsai              | Johnny's words with its minimal set: INC, DEC, JMP, TST, HLT |
+| Little Man Computer | Three decimal digits, 100 mailboxes, values -999 to 999     |
+| MARIE               | 16-bit hex: one digit of code, three of operand. 4096 cells |
+
+Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
+**Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
+files, both switch to Johnny by themselves. Saving a program under a name ending in
+`.ram` writes a Johnny file.
+
+Once the set or its format matches none of the presets, the picker says **Custom**.
+Picking the machine again gives it its own set back and keeps the memory.
+
+Speed, visible panels, the view, the machine, theme and window size are remembered
 between launches.
 
 ### Instructions
+
+The Standard machine's set:
 
 | Code | Name  | Effect                                      |
 | ---- | ----- | ------------------------------------------- |
@@ -72,9 +95,9 @@ between launches.
 | 0E   | TST   | `ACC = mem[operand]`, skip the next instruction if it is 0 |
 | FF   | HALT  | Stop                                        |
 
-The accumulator is kept between 0 and 19999. An operand reaches 256 cells (1000 in Johnny
-mode); after the last one the program counter goes back to 0, in Johnny mode it stays on
-999 like in Johnny.
+The accumulator is kept between 0 and 19999. An operand reaches 256 cells (1000 on
+Johnny); after the last one the program counter goes back to 0, on Johnny it stays on
+999 like in Johnny. The Guide tab describes the machine that is loaded.
 
 Every instruction is a list of micro steps (`ins->ab`, `ram->db`, `db->acc`, ...) that
 runs after the fetch (`pc->ab`, `ram->db`, `db->ins`, `ins->mc`). The Guide tab and the

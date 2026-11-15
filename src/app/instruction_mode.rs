@@ -1,7 +1,7 @@
 use egui::Ui;
 
-use super::gui_state::AppState;
-use crate::machine::{Definition, InstructionSet};
+use super::gui_state::{AppState, PRESETS};
+use crate::machine::Definition;
 
 pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.heading("Instruction Set");
@@ -40,28 +40,23 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             });
         }
 
-        // In the order of InstructionSet::presets.
-        let buttons = [
-            (
-                "Restore Default",
-                "Standard mode with the built-in instruction set",
-            ),
-            (
-                "Johnny",
-                "Johnny mode with the instructions of the Johnny simulator: TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL, HLT",
-            ),
-            (
-                "Bonsai",
-                "Johnny mode with its minimal set: INC, DEC, JMP, TST, HLT",
-            ),
-        ];
-
-        for ((label, hint), preset) in buttons.into_iter().zip(InstructionSet::presets()) {
-            if ui.button(label).on_hover_text(hint).clicked() {
-                state.use_set(preset);
+        // The same as the machine picker, so that this one's set can be put back here too.
+        for (preset, (label, hint)) in PRESETS.into_iter().enumerate() {
+            if ui
+                .button(label)
+                .on_hover_text(format!(
+                    "{hint}. Switches to this machine, or gives it its own set back"
+                ))
+                .clicked()
+            {
+                state.pick(preset);
             }
         }
     });
+
+    ui.separator();
+
+    crate::gui::format_view::show(ui, &mut state.machine.instruction_set);
 
     ui.separator();
 
