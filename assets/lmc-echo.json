@@ -1,5 +1,30 @@
 {
     "name": "lmc-echo",
     "entry_point": 0,
-    "memory": [901, 902, 0]
+    "memory": [901, 902, 0],
+    "instruction_set": {
+        "name": "LMC",
+        "format": {
+            "radix": 10,
+            "code_digits": 1,
+            "operand_digits": 2,
+            "codes": 10,
+            "cells": 100,
+            "acc_min": -999,
+            "acc_max": 999,
+            "data_encoding": "Lmc"
+        },
+        "definitions": [
+            {"code": 1, "mnemonic": "ADD", "opcode": "Add"},
+            {"code": 2, "mnemonic": "SUB", "opcode": "Sub"},
+            {"code": 3, "mnemonic": "STA", "opcode": "Store"},
+            {"code": 5, "mnemonic": "LDA", "opcode": "Load"},
+            {"code": 6, "mnemonic": "BRA", "opcode": "Jump"},
+            {"code": 7, "mnemonic": "BRZ", "opcode": "JumpIfZero"},
+            {"code": 0, "operand": 0, "mnemonic": "HLT", "opcode": "Halt"},
+            {"code": 8, "mnemonic": "BRP", "opcode": "Custom", "micro": ["PcInc", "InsToPcIfNonNegative", "McZero"]},
+            {"code": 9, "operand": 1, "mnemonic": "INP", "opcode": "Custom", "micro": ["Input", "PcInc", "McZero"]},
+            {"code": 9, "operand": 2, "mnemonic": "OUT", "opcode": "Custom", "micro": ["Output", "PcInc", "McZero"]}
+        ]
+    }
 }

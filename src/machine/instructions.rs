@@ -314,6 +314,9 @@ pub struct Definition {
     pub code: i32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub operand: Option<i32>,
+    // With a mask, `operand` is the value the decoded operand must match under that mask.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand_mask: Option<i32>,
     pub mnemonic: String,
     pub opcode: Opcode,
 
@@ -376,7 +379,20 @@ impl InstructionSet {
     pub fn find_instruction(&self, code: i32, operand: i32) -> Option<&Definition> {
         self.definitions
             .iter()
-            .find(|definition| definition.code == code && definition.operand == Some(operand))
+            .find(|definition| {
+                definition.code == code
+                    && definition.operand_mask.is_none()
+                    && definition.operand == Some(operand)
+            })
+            .or_else(|| {
+                self.definitions.iter().find(|definition| {
+                    definition.code == code
+                        && definition
+                            .operand_mask
+                            .zip(definition.operand)
+                            .is_some_and(|(mask, expected)| operand & mask == expected & mask)
+                })
+            })
             .or_else(|| {
                 self.definitions
                     .iter()
@@ -486,6 +502,16 @@ impl InstructionSet {
             "fixed instruction operands must be between 0 and {max_operand}"
         );
 
+        anyhow::ensure!(
+            self.definitions.iter().all(|definition| {
+                definition.operand_mask.is_none_or(|mask| {
+                    definition.operand.is_some_and(|operand| operand & mask == operand)
+                        && (0..=max_operand).contains(&mask)
+                })
+            }),
+            "operand masks need a fixed operand and must be between 0 and {max_operand}"
+        );
+
         Ok(())
     }
 
@@ -523,6 +549,7 @@ impl InstructionSet {
                 set.definitions.push(Definition {
                     code: code as i32,
                     operand: None,
+                    operand_mask: None,
                     mnemonic: if mnemonic.is_empty() {
                         format!("{code:02}")
                     } else {
@@ -555,6 +582,7 @@ impl InstructionSet {
                 .map(|&(code, mnemonic, opcode)| Definition {
                     code,
                     operand: None,
+                    operand_mask: None,
                     mnemonic: mnemonic.to_string(),
                     opcode,
                     micro: Vec::new(),
@@ -631,6 +659,7 @@ impl InstructionSet {
             Definition {
                 code: 0,
                 operand: Some(0),
+                operand_mask: None,
                 mnemonic: "HLT".to_string(),
                 opcode: Opcode::Halt,
                 micro: Vec::new(),
@@ -638,6 +667,7 @@ impl InstructionSet {
             Definition {
                 code: 8,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "BRP".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![PcInc, InsToPcIfNonNegative, McZero],
@@ -645,6 +675,7 @@ impl InstructionSet {
             Definition {
                 code: 9,
                 operand: Some(1),
+                operand_mask: None,
                 mnemonic: "INP".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![Input, PcInc, McZero],
@@ -652,6 +683,7 @@ impl InstructionSet {
             Definition {
                 code: 9,
                 operand: Some(2),
+                operand_mask: None,
                 mnemonic: "OUT".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![Output, PcInc, McZero],
@@ -683,6 +715,7 @@ impl InstructionSet {
             Definition {
                 code: 0,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "JnS".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![PcInc, PcToDb, InsToAb, DbToRam, InsToPc, PcInc, McZero],
@@ -690,6 +723,7 @@ impl InstructionSet {
             Definition {
                 code: 8,
                 operand: Some(0x000),
+                operand_mask: Some(0xc00),
                 mnemonic: "Skipcond <0".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![PcIncIfNegative, PcInc, McZero],
@@ -697,6 +731,7 @@ impl InstructionSet {
             Definition {
                 code: 8,
                 operand: Some(0x400),
+                operand_mask: Some(0xc00),
                 mnemonic: "Skipcond =0".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![PcIncIfZero, PcInc, McZero],
@@ -704,6 +739,7 @@ impl InstructionSet {
             Definition {
                 code: 8,
                 operand: Some(0x800),
+                operand_mask: Some(0xc00),
                 mnemonic: "Skipcond >0".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![PcIncIfPositive, PcInc, McZero],
@@ -711,6 +747,7 @@ impl InstructionSet {
             Definition {
                 code: 10,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "Clear".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![AccZero, PcInc, McZero],
@@ -718,6 +755,7 @@ impl InstructionSet {
             Definition {
                 code: 11,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "AddI".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![InsToAb, RamToDb, DbToAb, RamToDb, Plus, PcInc, McZero],
@@ -725,6 +763,7 @@ impl InstructionSet {
             Definition {
                 code: 12,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "JumpI".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![InsToAb, RamToDb, DbToAb, AbToPc, McZero],
@@ -732,6 +771,7 @@ impl InstructionSet {
             Definition {
                 code: 13,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "LoadI".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![InsToAb, RamToDb, DbToAb, RamToDb, DbToAcc, PcInc, McZero],
@@ -739,6 +779,7 @@ impl InstructionSet {
             Definition {
                 code: 14,
                 operand: None,
+                operand_mask: None,
                 mnemonic: "StoreI".to_string(),
                 opcode: Opcode::Custom,
                 micro: vec![InsToAb, RamToDb, DbToAb, AccToDb, DbToRam, PcInc, McZero],
@@ -837,7 +878,7 @@ mod tests {
         assert_eq!(marie.mnemonic_for(8, 0x000), "Skipcond <0");
         assert_eq!(marie.mnemonic_for(8, 0x400), "Skipcond =0");
         assert_eq!(marie.mnemonic_for(8, 0x800), "Skipcond >0");
-        assert!(marie.find_instruction(8, 0x100).is_none());
+        assert_eq!(marie.mnemonic_for(8, 0x100), "Skipcond <0");
     }
 
     #[test]

@@ -74,6 +74,7 @@ impl Machine {
 
     pub fn reset(&mut self) {
         self.cpu.reset();
+        self.entry_point = self.address(self.entry_point as i32);
         self.cpu.pc = self.entry_point;
         self.previous = self.cpu;
 
@@ -107,13 +108,33 @@ impl Machine {
         self.cpu.acc = value.max(format.acc_min).min(format.acc_max);
     }
 
+    pub(super) fn set_arithmetic_acc(&mut self, value: i64) {
+        let value = match self.instruction_set.format.data_encoding {
+            DataEncoding::TwosComplement => (value as i16) as i32,
+            DataEncoding::Unsigned | DataEncoding::Lmc => {
+                value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
+            }
+        };
+
+        self.set_acc(value);
+    }
+
+    pub(super) fn address(&self, address: i32) -> u16 {
+        let cells = self.instruction_set.format.cells().max(1) as i32;
+
+        address.rem_euclid(cells) as u16
+    }
+
+    pub(super) fn normalize_pc(&mut self) {
+        self.cpu.pc = self.address(self.cpu.pc as i32);
+    }
+
     pub(super) fn set_data_bus(&mut self, value: i32) {
         self.cpu.mbr = match self.instruction_set.format.data_encoding {
             DataEncoding::Unsigned => value.clamp(0, 0xffff),
             DataEncoding::TwosComplement => value.clamp(i16::MIN as i32, i16::MAX as i32),
-            // LMC mailboxes hold three decimal digits. A stored -1 wraps to 999, which loads
-            // back as the unsigned mailbox value 999; the mailbox has no separate sign bit.
-            DataEncoding::Lmc => value.rem_euclid(1000),
+            // Teaching LMC simulators commonly let mailboxes keep signed values from -999 to 999.
+            DataEncoding::Lmc => value.clamp(-999, 999),
         };
     }
 
@@ -121,7 +142,7 @@ impl Machine {
         let value = match self.instruction_set.format.data_encoding {
             DataEncoding::Unsigned => value.clamp(0, 0xffff),
             DataEncoding::TwosComplement => (value as u16 as i16) as i32,
-            DataEncoding::Lmc => value.clamp(0, 999),
+            DataEncoding::Lmc => value.clamp(-999, 999),
         };
 
         self.set_data_bus(value);
@@ -131,10 +152,12 @@ impl Machine {
         let value = match self.instruction_set.format.data_encoding {
             DataEncoding::Unsigned => self.cpu.mbr,
             DataEncoding::TwosComplement => (self.cpu.mbr as i16 as u16) as i32,
-            DataEncoding::Lmc => self.cpu.mbr.rem_euclid(1000),
+            DataEncoding::Lmc => self.cpu.mbr.clamp(-999, 999),
         };
 
-        self.memory.write(self.cpu.mar as usize, value);
+        let address = self.address(self.cpu.mar as i32);
+        self.cpu.mar = address;
+        self.memory.write(address as usize, value);
     }
 
     pub fn print(&mut self, text: &str) {
@@ -237,7 +260,7 @@ impl Machine {
     }
 
     pub fn current_instruction(&self) -> String {
-        self.describe(self.memory.read(self.cpu.pc as usize))
+        self.describe(self.memory.read(self.address(self.cpu.pc as i32) as usize))
     }
 
     pub fn describe(&self, raw: i32) -> String {
@@ -293,6 +316,31 @@ mod tests {
         machine.step();
 
         assert_eq!(machine.cpu.pc, 999);
+    }
+
+    #[test]
+    fn explicit_addresses_are_reduced_to_the_formats_cells() {
+        let mut machine = machine_with(&[word(7, 50)]);
+        machine.instruction_set.format.cells = Some(10);
+        machine.memory.write(50, word(255, 0));
+
+        machine.step();
+
+        assert_eq!(machine.cpu.pc, 0);
+        assert!(!machine.halted);
+    }
+
+    #[test]
+    fn invalid_program_counters_are_reduced_before_fetching() {
+        let mut machine = Machine::new();
+        machine.instruction_set.format.cells = Some(10);
+        machine.memory.write(5, word(255, 0));
+        machine.cpu.pc = u16::MAX;
+
+        machine.step();
+
+        assert!(machine.halted);
+        assert_eq!(machine.cpu.pc, 5);
     }
 
     #[test]
@@ -544,6 +592,7 @@ mod tests {
         machine.instruction_set.definitions.push(Definition {
             code: 77,
             operand: None,
+            operand_mask: None,
             mnemonic: "DBL".to_string(),
             opcode: Opcode::Custom,
             micro,
@@ -722,7 +771,12 @@ mod tests {
     fn every_bundled_example_runs_with_its_preset() {
         for example in crate::program::examples() {
             let mut machine = Machine::new();
-            machine.instruction_set = example.preset.clone();
+            assert_eq!(
+                example.program.instruction_set.as_ref().unwrap().name,
+                example.preset.name,
+                "{} did not carry its instruction set",
+                example.name
+            );
             example.program.apply(&mut machine);
 
             if example.name == "LMC echo" || example.name == "MARIE echo" {
@@ -788,7 +842,7 @@ mod tests {
     }
 
     #[test]
-    fn lmc_stores_negative_values_as_three_digit_modulo_values() {
+    fn lmc_stores_and_loads_signed_values() {
         let mut machine = machine_with(&[310, 510, 902, 0]);
         machine.instruction_set = InstructionSet::lmc();
         machine.set_acc(-1);
@@ -796,8 +850,39 @@ mod tests {
         machine.run_steps(10);
 
         assert!(machine.halted);
-        assert_eq!(machine.memory.read(10), 999);
-        assert_eq!(machine.output, "999\n");
+        assert_eq!(machine.memory.read(10), -1);
+        assert_eq!(machine.cpu.acc, -1);
+        assert_eq!(machine.output, "-1\n");
+    }
+
+    #[test]
+    fn lmc_addition_uses_a_negative_value_loaded_from_memory() {
+        let mut machine = machine_with(&[510, 211, 312, 512, 111, 902, 0]);
+        machine.instruction_set = InstructionSet::lmc();
+        machine.memory.write(10, 0);
+        machine.memory.write(11, 1);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(12), -1);
+        assert_eq!(machine.cpu.acc, 0);
+        assert_eq!(machine.output, "0\n");
+    }
+
+    #[test]
+    fn lmc_brp_treats_a_reloaded_negative_value_as_negative() {
+        let mut machine = machine_with(&[510, 211, 312, 512, 807]);
+        machine.instruction_set = InstructionSet::lmc();
+        machine.memory.write(10, 0);
+        machine.memory.write(11, 1);
+
+        machine.run_steps(4);
+        machine.step();
+
+        assert_eq!(machine.memory.read(12), -1);
+        assert_eq!(machine.cpu.acc, -1);
+        assert_eq!(machine.cpu.pc, 5);
     }
 
     #[test]
@@ -818,6 +903,49 @@ mod tests {
 
             assert_eq!(machine.cpu.pc, if should_skip { 2 } else { 1 });
         }
+    }
+
+    #[test]
+    fn marie_skipcond_ignores_the_low_ten_operand_bits() {
+        let mut machine = machine_with(&[0x8401]);
+        machine.instruction_set = InstructionSet::marie();
+
+        machine.step();
+
+        assert_eq!(machine.cpu.pc, 2);
+        assert_eq!(machine.instruction_set.mnemonic_for(8, 0x401), "Skipcond =0");
+    }
+
+    #[test]
+    fn marie_indirect_addresses_are_reduced_to_twelve_bits_and_cells() {
+        let mut machine = machine_with(&[0xe010]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(0x010, 0x1014);
+        machine.set_acc(42);
+
+        machine.step();
+
+        assert_eq!(machine.memory.read(0x014), 42);
+        assert_eq!(machine.memory.read(0x1014), 0);
+
+        let mut jump = machine_with(&[0xc010]);
+        jump.instruction_set = InstructionSet::marie();
+        jump.memory.write(0x010, 0x1014);
+
+        jump.step();
+
+        assert_eq!(jump.cpu.pc, 0x014);
+    }
+
+    #[test]
+    fn marie_negative_indirect_jump_addresses_wrap_euclideanly() {
+        let mut machine = machine_with(&[0xc010]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(0x010, 0xffff);
+
+        machine.step();
+
+        assert_eq!(machine.cpu.pc, 0xfff);
     }
 
     #[test]
@@ -865,6 +993,30 @@ mod tests {
         assert_eq!(machine.memory.read(11), 65_413);
         assert_eq!(machine.cpu.acc, -123);
         assert_eq!(machine.output, "-123\n");
+    }
+
+    #[test]
+    fn marie_addition_wraps_at_the_signed_word_boundary() {
+        let mut machine = machine_with(&[0x100a, 0x300b]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(10, 0x7fff);
+        machine.memory.write(11, 1);
+
+        machine.run_steps(2);
+
+        assert_eq!(machine.cpu.acc, i16::MIN as i32);
+    }
+
+    #[test]
+    fn marie_subtraction_wraps_at_the_signed_word_boundary() {
+        let mut machine = machine_with(&[0x100a, 0x400b]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(10, 0x8000);
+        machine.memory.write(11, 1);
+
+        machine.run_steps(2);
+
+        assert_eq!(machine.cpu.acc, i16::MAX as i32);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

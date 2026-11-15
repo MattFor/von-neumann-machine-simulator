@@ -174,24 +174,37 @@ impl Format {
             "a word needs at least one digit of code and one of operand"
         );
 
-        // In u64, so that no digit count overflows.
-        let span = |digits: u32| u64::from(self.radix).checked_pow(digits).unwrap_or(u64::MAX);
-        let codes = self.codes.map_or(span(self.code_digits), u64::from);
-        let cells = self.cells.map_or(span(self.operand_digits), u64::from);
+        let code_span = u64::from(self.radix)
+            .checked_pow(self.code_digits)
+            .ok_or_else(|| anyhow::anyhow!("the code digit count is too large"))?;
+        let operand_span = u64::from(self.radix)
+            .checked_pow(self.operand_digits)
+            .ok_or_else(|| anyhow::anyhow!("the operand digit count is too large"))?;
+        let codes = self.codes.map_or(code_span, u64::from);
+        let cells = self.cells.map_or(operand_span, u64::from);
 
         anyhow::ensure!(
-            (1..=span(self.code_digits)).contains(&codes),
+            code_span <= 0x1_0000 && operand_span <= 0x1_0000,
+            "code and operand digit spans must fit 16 bits (65536)"
+        );
+
+        anyhow::ensure!(
+            (1..=code_span).contains(&codes),
             "{} code digits make at most {} codes",
             self.code_digits,
-            span(self.code_digits)
+            code_span
         );
         anyhow::ensure!(
-            codes.saturating_mul(span(self.operand_digits)) <= 0x1_0000,
+            codes.checked_mul(operand_span).is_some_and(|span| span <= 0x1_0000),
             "the largest word must fit 16 bits (65535)"
         );
         anyhow::ensure!(
             (1..=MEMORY_SIZE as u64).contains(&cells),
             "there must be between 1 and {MEMORY_SIZE} cells"
+        );
+        anyhow::ensure!(
+            cells <= operand_span,
+            "the operand digits can address at most {operand_span} cells"
         );
         anyhow::ensure!(
             self.acc_min <= self.acc_max,
@@ -260,5 +273,27 @@ mod tests {
         ] {
             assert!(format.check().is_err(), "{format:?}");
         }
+    }
+
+    #[test]
+    fn cells_must_fit_in_the_operand_address_space() {
+        let format = Format {
+            cells: Some(1001),
+            ..Format::johnny()
+        };
+
+        assert!(format.check().is_err());
+    }
+
+    #[test]
+    fn enormous_digit_counts_are_refused_without_building_their_spans() {
+        let format = Format {
+            radix: 2,
+            code_digits: u32::MAX,
+            codes: Some(1),
+            ..Format::default()
+        };
+
+        assert!(format.check().is_err());
     }
 }

@@ -1,0 +1,23 @@
+{
+    "name": "bonsai",
+    "entry_point": 0,
+    "memory": [1005, 5000, 0, 0, 0, 4],
+    "instruction_set": {
+        "name": "Bonsai",
+        "format": {
+            "radix": 10,
+            "code_digits": 2,
+            "operand_digits": 3,
+            "codes": 20,
+            "pc_overflow": "Stay"
+        },
+        "definitions": [
+            {"code": 0, "mnemonic": "NOP", "opcode": "Nop"},
+            {"code": 1, "mnemonic": "INC", "opcode": "Inc"},
+            {"code": 2, "mnemonic": "DEC", "opcode": "Dec"},
+            {"code": 3, "mnemonic": "JMP", "opcode": "Jump"},
+            {"code": 4, "mnemonic": "TST", "opcode": "Tst"},
+            {"code": 5, "mnemonic": "HLT", "opcode": "Halt"}
+        ]
+    }
+}

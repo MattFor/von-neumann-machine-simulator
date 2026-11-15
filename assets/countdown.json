@@ -1,5 +1,26 @@
 {
     "name": "countdown",
     "entry_point": 0,
-    "memory": [266, 2560, 3082, 266, 2054, 1793, 65280, 0, 0, 0, 5]
+    "memory": [266, 2560, 3082, 266, 2054, 1793, 65280, 0, 0, 0, 5],
+    "instruction_set": {
+        "name": "Default",
+        "definitions": [
+            {"code": 0, "mnemonic": "NOP", "opcode": "Nop"},
+            {"code": 1, "mnemonic": "LOAD", "opcode": "Load"},
+            {"code": 2, "mnemonic": "STORE", "opcode": "Store"},
+            {"code": 3, "mnemonic": "ADD", "opcode": "Add"},
+            {"code": 4, "mnemonic": "SUB", "opcode": "Sub"},
+            {"code": 5, "mnemonic": "MUL", "opcode": "Mul"},
+            {"code": 6, "mnemonic": "DIV", "opcode": "Div"},
+            {"code": 7, "mnemonic": "JMP", "opcode": "Jump"},
+            {"code": 8, "mnemonic": "JZ", "opcode": "JumpIfZero"},
+            {"code": 9, "mnemonic": "IN", "opcode": "Input"},
+            {"code": 10, "mnemonic": "OUT", "opcode": "Output"},
+            {"code": 11, "mnemonic": "INC", "opcode": "Inc"},
+            {"code": 12, "mnemonic": "DEC", "opcode": "Dec"},
+            {"code": 13, "mnemonic": "NULL", "opcode": "Null"},
+            {"code": 14, "mnemonic": "TST", "opcode": "Tst"},
+            {"code": 255, "mnemonic": "HALT", "opcode": "Halt"}
+        ]
+    }
 }
