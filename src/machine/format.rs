@@ -163,6 +163,13 @@ impl Format {
         self.cells.unwrap_or_else(|| self.span(self.operand_digits)) as usize
     }
 
+    // The fixed cell and its word, if it is one of the cells.
+    pub fn fixed(&self) -> Option<(usize, i32)> {
+        self.fixed_cell
+            .map(|(cell, word)| (cell as usize, word))
+            .filter(|(cell, _)| *cell < self.cells())
+    }
+
     // Zero-padded to `width` digits, letters in upper case like 0x1F.
     pub fn text(&self, value: i32, width: u32) -> String {
         let mut rest = value.unsigned_abs();

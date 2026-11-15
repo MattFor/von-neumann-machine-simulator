@@ -17,7 +17,8 @@ loads a program and saves it in the format of <out>'s extension.
 
 Options:
   --machine <name>  standard, johnny, bonsai, lmc, marie, cardiac or sap1. Default: the set in
-                    the file, Johnny for .ram. An .asm file needs it
+                    the file, Johnny for .ram. An .asm file needs it; a .mas file is
+                    always MARIE
   --input <values>  numbers for IN to read, separated by commas: --input 1,2,-3. 0x and 0b
                     are words in the machine's encoding, so 0xFFFF is -1 on MARIE
   --max-steps <n>   how many instructions to run at most (default 100000)
@@ -142,6 +143,9 @@ fn load(file: &str, set: Option<InstructionSet>) -> anyhow::Result<Program> {
     let path = Path::new(file);
 
     let set = match set {
+        Some(set) if has_extension(path, "mas") && set != InstructionSet::marie() => {
+            anyhow::bail!("a .mas file is always MARIE, so --machine can only be marie")
+        }
         Some(set) => Some(set),
         None if is_ram(path) => Some(InstructionSet::johnny()),
         None if has_extension(path, "asm") => {
@@ -181,15 +185,16 @@ fn run(options: Options) -> anyhow::Result<i32> {
         machine.push_input(value);
     }
 
+    // The instruction's line first, then what it printed, such as its error.
     let stop = machine.run(options.max_steps, |machine, address, instruction| {
-        print_output(machine);
-
         if options.trace {
             let address = format.operand_text(address as i32);
             let acc = machine.cpu.acc;
 
             print(io::stderr(), format_args!("{address}  {instruction}  acc {acc}"));
         }
+
+        print_output(machine);
     });
 
     print_output(&mut machine);
