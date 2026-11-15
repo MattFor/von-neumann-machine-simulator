@@ -3,7 +3,7 @@ use egui::Ui;
 use super::listing;
 use crate::machine::{FETCH, Machine, MicroOp};
 
-const SECTIONS: [(&str, &str); 9] = [
+const SECTIONS: [(&str, &str); 10] = [
     (
         "Quick start",
         "On the Machine tab click Example to load a small program, then Run (F5) to watch it \
@@ -83,6 +83,20 @@ const SECTIONS: [(&str, &str); 9] = [
          instructions, change their codes and add aliases. Set Operation to Custom to edit the \
          steps: + adds one at the end, clicking a step removes it. Save Set writes the set to a \
          file, and a saved program carries its set with it.",
+    ),
+    (
+        "Programs as text",
+        "Open Program also reads .asm files: a program as text, one instruction per line in \
+         the mnemonics of the instruction set that is loaded, like LOAD 1F. Mnemonics can be \
+         in any case. Numbers are in the machine's radix, hex in standard mode and decimal in \
+         Johnny mode; 0x, 0b or 0d in front makes them hex, binary or decimal.\n\n\
+         Comments start with ;, # or //. A name with : or , after it at the start of a line \
+         is a label, and can stand in for a number. Like in the Little Man Computer, a line \
+         may also start with a label followed by the instruction. DAT 5 puts the number 5 in \
+         a cell; DEC 5 and HEX 5 do it in decimal or hex where no instruction has that name. \
+         ORG 40 carries on at address 40.\n\n\
+         Save a program under a name ending in .asm to write it as text. Cells that hold no \
+         instruction come out as DAT. The program starts at address 0.",
     ),
     (
         "Johnny mode",

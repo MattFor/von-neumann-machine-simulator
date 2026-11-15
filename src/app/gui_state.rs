@@ -182,13 +182,13 @@ impl AppState {
 
     pub fn open_program(&mut self) {
         let Some(path) = rfd::FileDialog::new()
-            .add_filter("Program", &["json", "ram"])
+            .add_filter("Program", &["json", "ram", "asm"])
             .pick_file()
         else {
             return;
         };
 
-        match Program::load(&path) {
+        match Program::load(&path, &self.machine.instruction_set) {
             Ok(program) => {
                 if is_ram(&path) && !self.johnny() {
                     self.toggle_johnny();
@@ -212,6 +212,7 @@ impl AppState {
         let Some(path) = rfd::FileDialog::new()
             .add_filter("Program", &["json"])
             .add_filter("Johnny program", &["ram"])
+            .add_filter("Assembly", &["asm"])
             .set_file_name(format!("{name}.json"))
             .save_file()
         else {

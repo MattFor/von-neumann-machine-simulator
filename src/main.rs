@@ -1,4 +1,5 @@
 mod app;
+mod assembler;
 mod debugger;
 mod gui;
 mod machine;

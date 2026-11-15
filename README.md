@@ -92,6 +92,25 @@ Programs are JSON, see [`assets/countdown.json`](assets/countdown.json):
 set they were written with, under `instruction_set`, and opening one switches to
 that set. Files without it keep the set that is currently loaded.
 
+Files ending in `.asm` are programs as text, in the mnemonics of the loaded set:
+
+```asm
+start:  LOAD count   ; comments start with ;, # or //
+        OUT
+        DEC count
+        JZ end
+        JMP start
+end:    HALT
+count:  DAT 5
+```
+
+Mnemonics can be in any case. Numbers are in the set's radix unless `0x`, `0b` or
+`0d` says otherwise, and a label can stand in for one. A label ends in `:` or
+MARIE's `,`, or is LMC's first word that is not a mnemonic. `DAT n` (`DAT` alone is
+0) writes a number, as do MARIE's `DEC n` and `HEX n` where no instruction has that
+name, and `ORG n` carries on at address `n`. Saving under `.asm` writes this form;
+words that are no instruction come out as `DAT`. An `.asm` file starts at address 0.
+
 ## Building
 
 ```sh

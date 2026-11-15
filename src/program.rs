@@ -3,12 +3,25 @@ use std::path::Path;
 
 use serde::{Deserialize, Serialize};
 
+use crate::assembler::{assemble, disassemble};
 use crate::machine::{InstructionSet, MEMORY_SIZE, Machine};
 use crate::utilities::read_text;
 
-pub fn is_ram(path: &Path) -> bool {
+fn has_extension(path: &Path, extension: &str) -> bool {
     path.extension()
-        .is_some_and(|extension| extension.eq_ignore_ascii_case("ram"))
+        .is_some_and(|found| found.eq_ignore_ascii_case(extension))
+}
+
+pub fn is_ram(path: &Path) -> bool {
+    has_extension(path, "ram")
+}
+
+// The first mistake is enough for the status bar.
+fn assembled(text: &str, set: &InstructionSet) -> anyhow::Result<Vec<i32>> {
+    assemble(text, set).map_err(|errors| match errors.len() {
+        1 => anyhow::anyhow!("{}", errors[0]),
+        count => anyhow::anyhow!("{}, and {} more", errors[0], count - 1),
+    })
 }
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -68,14 +81,21 @@ impl Program {
         words.join("\r\n")
     }
 
-    // Files ending in .ram are Johnny programs, everything else is JSON.
-    pub fn load(path: &Path) -> anyhow::Result<Self> {
+    // Files ending in .ram are Johnny programs, .asm are text in the mnemonics of `set`,
+    // everything else is JSON.
+    pub fn load(path: &Path, set: &InstructionSet) -> anyhow::Result<Self> {
         let text = read_text(path)?;
+        let name = path.file_stem().unwrap_or_default().to_string_lossy();
 
         let program: Self = if is_ram(path) {
-            let name = path.file_stem().unwrap_or_default().to_string_lossy();
-
             Self::from_ram(&name, &text)?
+        } else if has_extension(path, "asm") {
+            Self {
+                name: name.to_string(),
+                entry_point: 0,
+                memory: assembled(&text, set)?,
+                instruction_set: None,
+            }
         } else {
             serde_json::from_str(&text)?
         };
@@ -108,6 +128,17 @@ impl Program {
             );
 
             self.to_ram()
+        } else if has_extension(path, "asm") {
+            let set = self
+                .instruction_set
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?;
+            let text = disassemble(&self.memory, set);
+
+            // Words or cells the format cannot hold would not load back.
+            assembled(&text, set)?;
+
+            text
         } else {
             serde_json::to_string_pretty(self)?
         };
@@ -140,7 +171,7 @@ mod tests {
         let path = std::env::temp_dir().join(format!("vnm-test-{name}"));
         fs::write(&path, text).unwrap();
 
-        let program = Program::load(&path);
+        let program = Program::load(&path, &InstructionSet::default());
         fs::remove_file(&path).unwrap();
 
         program
@@ -245,7 +276,7 @@ mod tests {
             .save(&path)
             .unwrap();
         let text = fs::read_to_string(&path).unwrap();
-        let program = Program::load(&path).unwrap();
+        let program = Program::load(&path, &machine.instruction_set).unwrap();
         fs::remove_file(&path).unwrap();
 
         assert!(text.contains(r#""radix": 8"#));
@@ -263,9 +294,52 @@ mod tests {
             .set_len(16 * 1024 * 1024 + 1)
             .unwrap();
 
-        let error = Program::load(&path).unwrap_err();
+        let error = Program::load(&path, &InstructionSet::default()).unwrap_err();
         fs::remove_file(&path).unwrap();
 
         assert!(error.to_string().contains("larger"));
+    }
+
+    #[test]
+    fn asm_files_are_written_and_read_in_the_loaded_set() {
+        let path = std::env::temp_dir().join("vnm-test-sum.ASM");
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::johnny();
+        Program::from_ram("sum", include_str!("../assets/sum.ram"))
+            .unwrap()
+            .apply(&mut machine);
+
+        let saved = Program::from_machine("sum".to_string(), &machine);
+        saved.save(&path).unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let program = Program::load(&path, &machine.instruction_set).unwrap();
+        fs::remove_file(&path).unwrap();
+
+        assert!(text.starts_with("TAKE 10\nADD 11\nSAVE 12\nHLT 0\n"));
+        assert_eq!(program.memory, saved.memory);
+        assert!(program.instruction_set.is_none());
+    }
+
+    #[test]
+    fn asm_files_report_the_first_mistake_and_how_many_more() {
+        let error = load("mistakes.asm", "LOAD 1\nFOO\nBAR\n").unwrap_err();
+
+        assert_eq!(error.to_string(), "line 2: unknown mnemonic FOO, and 1 more");
+    }
+
+    #[test]
+    fn memory_the_format_cannot_hold_is_not_saved_as_asm() {
+        let path = std::env::temp_dir().join("vnm-test-wide.asm");
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::johnny();
+        machine.memory.write(0, 65535);
+
+        let error = Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap_err();
+        let written = fs::remove_file(&path).is_ok();
+
+        assert!(error.to_string().starts_with("line 1: 65535 is out of range"));
+        assert!(!written);
     }
 }

@@ -459,7 +459,7 @@ mod tests {
         Program::from_machine("roundtrip".to_string(), &machine)
             .save(&path)
             .unwrap();
-        let program = Program::load(&path).unwrap();
+        let program = Program::load(&path, &machine.instruction_set).unwrap();
         std::fs::remove_file(&path).unwrap();
 
         let mut loaded = Machine::new();
