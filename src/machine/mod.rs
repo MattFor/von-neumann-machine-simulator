@@ -116,7 +116,15 @@ impl Machine {
     }
 
     pub(super) fn set_arithmetic_acc(&mut self, value: i64) {
-        let value = match self.instruction_set.format.data_encoding {
+        let format = self.instruction_set.format;
+        let value = match format.data_encoding {
+            // Past one end it comes round from the other, like SAP-1's A register.
+            _ if format.flags => {
+                let min = i64::from(format.acc_min);
+                let span = (i64::from(format.acc_max) - min + 1).max(1);
+
+                (min + (value - min).rem_euclid(span)) as i32
+            }
             DataEncoding::TwosComplement => (value as i16) as i32,
             DataEncoding::Unsigned | DataEncoding::Lmc => {
                 value.clamp(i32::MIN as i64, i32::MAX as i64) as i32
@@ -124,6 +132,14 @@ impl Machine {
         };
 
         self.set_acc(value);
+    }
+
+    // Plus and minus latch the flags, like SAP-1's flags register; loads leave them alone.
+    pub(super) fn set_flags(&mut self, carry: bool) {
+        if self.instruction_set.format.flags {
+            self.cpu.carry = carry;
+            self.cpu.zero = self.cpu.acc == 0;
+        }
     }
 
     pub(super) fn address(&self, address: i32) -> u16 {
@@ -828,6 +844,7 @@ mod tests {
                 "Standard countdown" => "5\n4\n3\n2\n1\n",
                 "LMC echo" | "MARIE echo" => "42\n",
                 "CARDIAC digits" => "4\n7\n2\n",
+                "SAP-1 count" => "0\n51\n102\n153\n204\n255\n255\n204\n153\n102\n51\n0\n",
                 "Johnny sum" | "Bonsai increment" => "",
                 name => panic!("unexpected example {name}"),
             };
@@ -1206,6 +1223,96 @@ mod tests {
         lmc.instruction_set = InstructionSet::lmc();
 
         assert_eq!(lmc.read(0), 5);
+    }
+
+    fn sap1(program: &[i32]) -> Machine {
+        let mut machine = machine_with(program);
+        machine.instruction_set = InstructionSet::sap1();
+        machine
+    }
+
+    #[test]
+    fn every_sap1_instruction_does_what_its_table_says() {
+        let mut machine = sap1(&[
+            0x00, 0x1e, 0x2f, 0x75, 0xf0, 0x3d, 0x88, 0xf0, 0x59, 0x4c, 0xe0, 0x64, 0, 44, 200, 100,
+        ]);
+
+        let step = |machine: &mut Machine| {
+            machine.step();
+            (machine.cpu.acc, machine.cpu.pc, machine.cpu.carry, machine.cpu.zero)
+        };
+
+        assert_eq!(step(&mut machine), (0, 1, false, false), "NOP");
+        assert_eq!(step(&mut machine), (200, 2, false, false), "LDA E");
+        assert_eq!(step(&mut machine), (44, 3, true, false), "ADD F");
+        assert_eq!(step(&mut machine), (44, 5, true, false), "JC 5");
+        assert_eq!(step(&mut machine), (0, 6, true, true), "SUB D");
+        assert_eq!(step(&mut machine), (0, 8, true, true), "JZ 8");
+        assert_eq!(step(&mut machine), (9, 9, true, true), "LDI 9 leaves the flags alone");
+        assert_eq!(step(&mut machine), (9, 10, true, true), "STA C");
+        assert_eq!(machine.memory.read(0xc), 9);
+        assert_eq!(step(&mut machine), (9, 11, true, true), "OUT");
+        assert_eq!(machine.output, "9\n");
+        assert_eq!(step(&mut machine), (9, 4, true, true), "JMP 4");
+        assert_eq!(step(&mut machine), (9, 4, true, true), "HLT");
+        assert!(machine.halted);
+        assert_eq!(machine.describe(0x75), "7.5  JC 5");
+    }
+
+    #[test]
+    fn sap1_add_and_sub_set_the_flags_that_jc_and_jz_test() {
+        for (a, op, b, acc, carry, zero) in [
+            (200, "ADD", 100, 44, true, false),
+            (200, "ADD", 56, 0, true, true),
+            (1, "ADD", 2, 3, false, false),
+            (5, "SUB", 3, 2, true, false),
+            (5, "SUB", 5, 0, true, true),
+            (3, "SUB", 5, 254, false, false),
+        ] {
+            let code = if op == "ADD" { 0x2f } else { 0x3f };
+
+            for (jump, taken) in [(0x79, carry), (0x89, zero)] {
+                // LDA E, ADD or SUB F, then JC or JZ 9.
+                let mut machine = sap1(&[0x1e, code, jump]);
+                machine.memory.write(0xe, a);
+                machine.memory.write(0xf, b);
+
+                machine.run_steps(3);
+
+                let flags = (machine.cpu.acc, machine.cpu.carry, machine.cpu.zero);
+                assert_eq!(flags, (acc, carry, zero), "{a} {op} {b}");
+                assert_eq!(machine.cpu.pc, if taken { 9 } else { 3 }, "{a} {op} {b} {jump:x}");
+            }
+        }
+    }
+
+    #[test]
+    fn sap1_a_register_wraps_where_other_accumulators_stop() {
+        let mut machine = sap1(&[]);
+        machine.set_acc(255);
+
+        machine.manual(MicroOp::AccInc);
+        assert_eq!(machine.cpu.acc, 0);
+
+        machine.manual(MicroOp::AccDec);
+        assert_eq!(machine.cpu.acc, 255);
+
+        machine.cpu.mbr = 0x200 + 3;
+        machine.manual(MicroOp::Plus);
+        assert_eq!((machine.cpu.acc, machine.cpu.carry), (2, true));
+
+        // A machine without flags still stops at its ends and sets none.
+        let mut standard = Machine::new();
+        standard.set_acc(ACC_MAX);
+        standard.cpu.mbr = 1;
+        standard.manual(MicroOp::Plus);
+
+        assert_eq!(standard.cpu.acc, ACC_MAX);
+        assert!(!standard.cpu.carry && !standard.cpu.zero);
+
+        // Reset clears the flags.
+        machine.reset();
+        assert!(!machine.cpu.carry && !machine.cpu.zero);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

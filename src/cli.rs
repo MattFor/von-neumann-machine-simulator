@@ -16,8 +16,8 @@ to a halt or the step limit, and prints its output to stdout, one value per line
 loads a program and saves it in the format of <out>'s extension.
 
 Options:
-  --machine <name>  standard, johnny, bonsai, lmc, marie or cardiac. Default: the set in the file,
-                    Johnny for .ram. An .asm file needs it
+  --machine <name>  standard, johnny, bonsai, lmc, marie, cardiac or sap1. Default: the set in
+                    the file, Johnny for .ram. An .asm file needs it
   --input <values>  numbers for IN to read, separated by commas: --input 1,2,-3. 0x and 0b
                     are words in the machine's encoding, so 0xFFFF is -1 on MARIE
   --max-steps <n>   how many instructions to run at most (default 100000)
@@ -30,7 +30,7 @@ away, as `| head` does. A run says which on stderr.
 ";
 
 // In the order of InstructionSet::presets.
-const MACHINES: [&str; 6] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac"];
+const MACHINES: [&str; 7] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac", "sap1"];
 
 struct Options {
     convert: bool,

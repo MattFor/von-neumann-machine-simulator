@@ -12,6 +12,10 @@ pub struct Registers {
     pub ir: u16,  // instruction register
     pub mar: u16, // memory address register
     pub mbr: i32, // memory buffer register
+
+    // Set by plus and minus on a format with flags only.
+    pub carry: bool,
+    pub zero: bool,
 }
 
 impl Registers {
@@ -22,6 +26,8 @@ impl Registers {
             ir: 0,
             mar: 0,
             mbr: 0,
+            carry: false,
+            zero: false,
         }
     }
 

@@ -8,7 +8,7 @@ pub const MIN_SPEED: usize = 1;
 pub const MAX_SPEED: usize = 10_000;
 
 // Name and description of every machine, in the order of InstructionSet::presets.
-pub const PRESETS: [(&str, &str); 6] = [
+pub const PRESETS: [(&str, &str); 7] = [
     (
         "Standard",
         "Hex words: a byte of instruction code, then a byte of operand. 256 cells",
@@ -35,6 +35,11 @@ pub const PRESETS: [(&str, &str); 6] = [
         "CARDIAC",
         "Bell Labs' cardboard computer: a sign and three decimal digits per cell, 100 cells, a \
          four-digit accumulator, and cell 00 fixed at 001, the loader",
+    ),
+    (
+        "SAP-1",
+        "Ben Eater's breadboard computer: 16 bytes of a hex digit of instruction and one of \
+         address, an 8-bit A register that wraps round, and carry and zero flags for JC and JZ",
     ),
 ];
 

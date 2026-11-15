@@ -139,6 +139,16 @@ pub fn examples() -> Vec<Example> {
             )
             .expect("bundled CARDIAC example is valid"),
         ),
+        example(
+            "SAP-1 count",
+            InstructionSet::sap1(),
+            Program::from_asm(
+                "count",
+                include_str!("../assets/sap1-count.asm"),
+                &InstructionSet::sap1(),
+            )
+            .expect("bundled SAP-1 example is valid"),
+        ),
     ]
 }
 

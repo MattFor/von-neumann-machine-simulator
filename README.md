@@ -50,7 +50,7 @@ The keys work on the Machine tab.
 
 ### Machines
 
-The **Machine** picker has six presets. Each keeps its own program, so switching
+The **Machine** picker has seven presets. Each keeps its own program, so switching
 loses nothing.
 
 | Machine             | Words                                                       |
@@ -61,11 +61,18 @@ loses nothing.
 | Little Man Computer | Three decimal digits, 100 mailboxes, values -999 to 999     |
 | MARIE               | 16-bit hex: one digit of code, three of operand. 4096 cells |
 | CARDIAC             | A sign and three decimal digits, 100 cells, a four-digit accumulator |
+| SAP-1               | A byte: one hex digit of code, one of address. 16 cells, an 8-bit A register |
 
 CARDIAC is Bell Labs' cardboard computer. Its cell 00 always holds `001`, the
 loader: run from 00, it reads the next input into 01 and carries on there. `JMP`
 leaves a jump back (`8xx`) in cell 99, `SFT xy` shifts the accumulator `x` digits
 left, then `y` right, and `STO` keeps the accumulator's low three digits.
+
+SAP-1 is Ben Eater's breadboard computer with the instructions from the end of his
+series: `NOP`, `LDA`, `ADD`, `SUB`, `STA`, `LDI n` (loads its 4-bit operand), `JMP`,
+`JC`, `JZ`, `OUT` and `HLT`. Its A register goes round from 255 to 0 and back.
+`ADD` and `SUB` set the carry flag (on `SUB`, when nothing was borrowed) and the zero
+flag, and `JC` and `JZ` jump on them; nothing else changes the flags.
 
 Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
 **Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
@@ -161,7 +168,7 @@ a MARIE program under `.mas` writes one.
 von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --input 12,30
 ```
 
-- `--machine standard|johnny|bonsai|lmc|marie|cardiac` picks the machine. Without it, a file
+- `--machine standard|johnny|bonsai|lmc|marie|cardiac|sap1` picks the machine. Without it, a file
   runs on the set it carries, `.ram` on Johnny and JSON on Standard; `.asm` needs it.
 - `--input 1,2,-3` is what `IN` reads. `0x` and `0b` values are words in the machine's
   encoding, so `0xFFFF` is -1 on MARIE.

@@ -33,6 +33,16 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
                 machine.cpu.pc = machine.address(operand as i32);
             }
         }
+        MicroOp::InsToPcIfCarry => {
+            if machine.cpu.carry {
+                machine.cpu.pc = machine.address(operand as i32);
+            }
+        }
+        MicroOp::InsToPcIfZeroFlag => {
+            if machine.cpu.zero {
+                machine.cpu.pc = machine.address(operand as i32);
+            }
+        }
 
         MicroOp::InsToMc => {
             machine.executing = true;
@@ -82,8 +92,19 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
         MicroOp::AccZero => machine.set_acc(0),
         MicroOp::AccInc => machine.set_arithmetic_acc(i64::from(acc) + 1),
         MicroOp::AccDec => machine.set_arithmetic_acc(i64::from(acc) - 1),
-        MicroOp::Plus => machine.set_arithmetic_acc(i64::from(acc) + i64::from(mbr)),
-        MicroOp::Minus => machine.set_arithmetic_acc(i64::from(acc) - i64::from(mbr)),
+        MicroOp::Plus => {
+            let sum = i64::from(acc) + i64::from(mbr);
+
+            machine.set_arithmetic_acc(sum);
+            machine.set_flags(sum > i64::from(machine.instruction_set.format.acc_max));
+        }
+        MicroOp::Minus => {
+            let difference = i64::from(acc) - i64::from(mbr);
+
+            machine.set_arithmetic_acc(difference);
+            // Carry means nothing was borrowed, as the adder works out A + !B + 1.
+            machine.set_flags(difference >= i64::from(machine.instruction_set.format.acc_min));
+        }
         MicroOp::Times => machine.set_arithmetic_acc(i64::from(acc) * i64::from(mbr)),
         MicroOp::Divide => {
             if mbr == 0 {

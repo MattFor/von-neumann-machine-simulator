@@ -132,6 +132,11 @@ fn standard_prints_fibonacci_numbers() {
 }
 
 #[test]
+fn sap1_multiplies_with_the_carry_flag() {
+    assert_eq!(program("sap1-multiply.asm", "sap1", ""), halted("42\n"));
+}
+
+#[test]
 fn johnny_multiplies_into_the_accumulator() {
     let trace = traced("johnny-multiply.asm", "johnny");
 

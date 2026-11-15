@@ -56,6 +56,10 @@ pub struct Format {
     // Run stops on an instruction that leaves the program counter where it was.
     pub stop_when_pc_stays: bool,
 
+    // Plus and minus set the carry and zero flags, and the accumulator wraps round its range
+    // like a register instead of stopping at its ends.
+    pub flags: bool,
+
     // A cell and the word it always reads as, like CARDIAC's loader 001 in cell 00.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub fixed_cell: Option<(u32, i32)>,
@@ -76,6 +80,7 @@ impl Default for Format {
             unknown_code: UnknownCode::Nop,
             pc_overflow: PcOverflow::Wrap,
             stop_when_pc_stays: false,
+            flags: false,
             fixed_cell: None,
         }
     }
@@ -133,6 +138,18 @@ impl Format {
             acc_min: i16::MIN as i32,
             acc_max: i16::MAX as i32,
             data_encoding: DataEncoding::TwosComplement,
+            ..Self::default()
+        }
+    }
+
+    // Ben Eater's breadboard computer: 16 bytes, a hex digit of code then one of address, and
+    // an 8-bit A register with carry and zero flags.
+    pub fn sap1() -> Self {
+        Self {
+            code_digits: 1,
+            operand_digits: 1,
+            acc_max: 255,
+            flags: true,
             ..Self::default()
         }
     }
