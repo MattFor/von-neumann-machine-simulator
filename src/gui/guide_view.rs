@@ -24,7 +24,10 @@ const SECTIONS: [(&str, &str); 9] = [
          Clear erases the memory.\n\
          Open Program (Ctrl+O) and Save Program (Ctrl+S) read and write program files.\n\n\
          A running program stops by itself on HALT, on a breakpoint, and while IN waits for a \
-         number.",
+         number.\n\n\
+         Programs also run without the window, from a terminal: von-neumann-machine-simulator \
+         run add.asm --machine lmc --input 12,30 prints what the program outputs. --help there \
+         lists the options.",
     ),
     (
         "Memory",
