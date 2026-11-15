@@ -156,6 +156,13 @@ pub fn show(ui: &mut Ui, set: &mut InstructionSet) {
                         "Run stops on an instruction that leaves the program counter where it was, \
                          like a jump to itself",
                     );
+
+                ui.checkbox(&mut draft.flags, "Flags")
+                    .on_hover_text(
+                        "Plus and minus set a carry and a zero flag, which cf:ins->pc and zf:ins->pc \
+                         jump on, and the accumulator goes round its range like a register instead \
+                         of stopping at its ends, like SAP-1",
+                    );
             });
 
             if let Err(error) = apply(set, draft) {

@@ -9,6 +9,7 @@ const OPEN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::O)
 const SAVE: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::S);
 const RUN: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F5);
 const STEP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F10);
+const BACK: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F9);
 const RESET: KeyboardShortcut = KeyboardShortcut::new(Modifiers::COMMAND, Key::R);
 
 pub fn show(ui: &mut Ui, state: &mut AppState) {
@@ -64,6 +65,17 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
         if action(ui, !halted, label, hint, RUN) {
             state.last_tick = Instant::now();
             state.running = !state.running;
+        }
+
+        if action(
+            ui,
+            state.machine.can_go_back(),
+            "\u{23EE} Back",
+            "Undo the last step or micro step: memory, registers, console and input go back to \
+             how they were. Loading a program, Reset, Clear and editing memory start afresh",
+            BACK,
+        ) {
+            state.back();
         }
 
         if action(

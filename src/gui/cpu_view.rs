@@ -63,22 +63,24 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
     ui.separator();
 
-    micro_buttons(
-        ui,
-        machine,
-        &[
-            MicroOp::AccInc,
-            MicroOp::AccDec,
-            MicroOp::AccZero,
-            MicroOp::Plus,
-            MicroOp::Minus,
-            MicroOp::Times,
-            MicroOp::Divide,
-            MicroOp::Input,
-            MicroOp::Output,
-        ],
-    );
+    micro_buttons(ui, machine, &BUTTONS);
 }
+
+// The arithmetic and console micro steps; the ones only some machines use show with their set.
+pub const BUTTONS: [MicroOp; 12] = [
+    MicroOp::AccInc,
+    MicroOp::AccDec,
+    MicroOp::AccZero,
+    MicroOp::Plus,
+    MicroOp::Minus,
+    MicroOp::Times,
+    MicroOp::Divide,
+    MicroOp::Shift,
+    MicroOp::Input,
+    MicroOp::InputToDb,
+    MicroOp::Output,
+    MicroOp::DbToOut,
+];
 
 #[cfg(test)]
 mod tests {

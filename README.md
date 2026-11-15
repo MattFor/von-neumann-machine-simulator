@@ -18,6 +18,7 @@ view switches. **Machine** next to it picks the machine to simulate.
 | -------- | --------------------------------- |
 | `F5`     | Run / pause                       |
 | `F10`    | Step                              |
+| `F9`     | Back: undo the last step          |
 | `F11`    | Micro step (control unit visible) |
 | `Ctrl+R` | Reset the CPU                     |
 | `Ctrl+O` | Open a program                    |
@@ -32,20 +33,29 @@ The keys work on the Machine tab.
   address bus points at.
 - **Breakpoints**: click an address to toggle one. Run stops when the program
   counter reaches it; press Run again to carry on.
-- **Registers**: the ones the last step changed are highlighted.
+- **Back**: undoes the last step, micro step or micro step button, up to 4096 of them.
+  Memory, registers, flags, console output, the input queue, the program counter and
+  whether the machine halted or waits for input go back to how they were. Loading a
+  program, Reset, Clear and editing a memory cell by hand forget the steps before, so
+  Back has nothing to undo after them. Each machine keeps its own steps, so switching
+  machines loses none.
+- **Registers**: the ones the last step changed are highlighted. A machine with flags,
+  like SAP-1, also shows its carry (`CF`) and zero (`ZF`) flags.
 - **Console**: `OUT` prints here. When the program stops on `IN`, type one or more
-  numbers and press Enter; a running program carries on by itself.
+  numbers and press Enter; a running program carries on by itself. `0x` and `0b`
+  values are words in the machine's encoding, as with `--input`.
 - **Control unit** (advanced view): shows the micro steps of the
   current instruction. **Micro Step** does one of them at a time. Every micro step
-  is also a button, so the machine can be driven by hand, and **Record** turns the
-  buttons you press into a new instruction.
+  the loaded set uses is also a button, so the machine can be driven by hand, and
+  **Record** turns the buttons you press into a new instruction.
 - **Instruction Set**: rename instructions, change their codes or add your own
   aliases, and save the set as JSON. An instruction set to `Custom` has its micro
   steps edited right there. An instruction can have a fixed operand, like LMC's
   `INP` (901) and `OUT` (902), and a mask, like MARIE's `Skipcond`.
 - **Format**, on the Instruction Set tab: the radix, the digits of code and operand,
   how many codes and cells there are, the accumulator range, how negative numbers
-  are stored, and what an unknown code or the end of memory does. A format the
+  are stored, what an unknown code or the end of memory does, and whether plus and
+  minus set flags, like SAP-1's. A format the
   machine can't hold is not applied, and the tab says why.
 
 ### Machines
@@ -64,21 +74,24 @@ loses nothing.
 | SAP-1               | A byte: one hex digit of code, one of address. 16 cells, an 8-bit A register |
 
 CARDIAC is Bell Labs' cardboard computer. Its cell 00 always holds `001`, the
-loader: run from 00, it reads the next input into 01 and carries on there. `JMP`
-leaves a jump back (`8xx`) in cell 99, `SFT xy` shifts the accumulator `x` digits
-left, then `y` right, and `STO` keeps the accumulator's low three digits.
+loader, and can't be edited: run from 00, it reads the next input into 01 and
+carries on there. `JMP` leaves a jump back (`8xx`) in cell 99, `SFT xy` shifts the
+accumulator `x` digits left, then `y` right, and `STO` keeps the accumulator's low
+three digits.
 
 SAP-1 is Ben Eater's breadboard computer with the instructions from the end of his
 series: `NOP`, `LDA`, `ADD`, `SUB`, `STA`, `LDI n` (loads its 4-bit operand), `JMP`,
 `JC`, `JZ`, `OUT` and `HLT`. Its A register goes round from 255 to 0 and back.
 `ADD` and `SUB` set the carry flag (on `SUB`, when nothing was borrowed) and the zero
-flag, and `JC` and `JZ` jump on them; nothing else changes the flags.
+flag, and `JC` and `JZ` jump on them; nothing else changes the flags. The registers
+show them as `CF` and `ZF`.
 
 Johnny and Bonsai work like the [Johnny simulator](https://github.com/Laubersheini/johnny).
 **Open Program** reads Johnny's `.ram` files and **Open Set** its `.mc` microcode
-files, both switch to Johnny by themselves. Saving a program under a name ending in
-`.ram` writes a Johnny file. It holds no set or entry point, so only a program in Johnny's
-own instructions that starts at 0 is saved that way; Bonsai programs go to `.json` or `.asm`.
+files, both switch to Johnny by themselves, also from Bonsai, whose machine is left
+as it was. Saving a program under a name ending in `.ram` writes a Johnny file. It holds
+no set or entry point, so only a program in Johnny's own instructions that starts at 0 is
+saved that way; Bonsai programs go to `.json` or `.asm`.
 
 Once the set or its format matches none of the presets, the picker says **Custom**.
 Picking the machine again gives it its own set back and keeps the memory.

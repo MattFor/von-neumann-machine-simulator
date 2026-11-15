@@ -86,7 +86,7 @@ impl Debug {
             return Err(Some(cell));
         }
 
-        state.machine.memory.write(cell as usize, value);
+        state.machine.edit(cell as usize, value);
 
         Ok((address, cell))
     }

@@ -1,9 +1,16 @@
 use egui::Ui;
 
-use crate::machine::Machine;
-use crate::utilities::parse_value;
+use crate::machine::{Format, Machine};
 
 const CONSOLE_HEADER_AND_INPUT_HEIGHT: f32 = 56.0;
+
+// Numbers as the command line's --input reads them, so 0xFFFF is -1 on MARIE.
+fn parse(format: &Format, input: &str) -> Option<Vec<i32>> {
+    input
+        .split_whitespace()
+        .map(|raw| format.parse_input(raw))
+        .collect()
+}
 
 pub fn show(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {
@@ -48,7 +55,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         );
 
         let enter = field.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter));
-        let values: Option<Vec<i32>> = input.split_whitespace().map(parse_value).collect();
+        let values = parse(&machine.instruction_set.format, &input);
         let clicked = ui
             .add_enabled(values.is_some(), egui::Button::new("Send"))
             .on_hover_text("Queue these numbers for IN to read")
@@ -77,4 +84,16 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
         ui.data_mut(|data| data.insert_temp(id, input));
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn typed_input_is_read_in_the_machines_encoding() {
+        assert_eq!(parse(&Format::marie(), "0xFFFF 12 -3"), Some(vec![-1, 12, -3]));
+        assert_eq!(parse(&Format::default(), "0xFFFF"), Some(vec![0xffff]));
+        assert_eq!(parse(&Format::marie(), "1 x"), None);
+    }
 }

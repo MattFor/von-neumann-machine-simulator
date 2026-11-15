@@ -5,6 +5,33 @@ use crate::machine::{Definition, FETCH, Machine, MicroOp, Opcode};
 
 const MICRO_STEP: KeyboardShortcut = KeyboardShortcut::new(Modifiers::NONE, Key::F11);
 
+// Every micro step but the bus transfers and the CPU's; the ones only some machines use show
+// with their set.
+pub const BUTTONS: [MicroOp; 22] = [
+    MicroOp::PcToAb,
+    MicroOp::PcToDb,
+    MicroOp::DbToIns,
+    MicroOp::InsToMc,
+    MicroOp::InsToAb,
+    MicroOp::InsToDb,
+    MicroOp::DbToAb,
+    MicroOp::InsToPc,
+    MicroOp::InsToPcIfZero,
+    MicroOp::InsToPcIfNonNegative,
+    MicroOp::InsToPcIfNegative,
+    MicroOp::InsToPcIfCarry,
+    MicroOp::InsToPcIfZeroFlag,
+    MicroOp::ReturnToDb,
+    MicroOp::AbToPc,
+    MicroOp::AbLast,
+    MicroOp::PcInc,
+    MicroOp::PcIncIfZero,
+    MicroOp::PcIncIfPositive,
+    MicroOp::PcIncIfNegative,
+    MicroOp::McZero,
+    MicroOp::Stop,
+];
+
 // Returns a message for the status bar when a recording ends.
 pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     ui.heading("Control Unit");
@@ -28,23 +55,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     }
 
     // The buttons come before the list, so they stay put while it changes length.
-    micro_buttons(
-        ui,
-        machine,
-        &[
-            MicroOp::PcToAb,
-            MicroOp::DbToIns,
-            MicroOp::InsToMc,
-            MicroOp::InsToAb,
-            MicroOp::InsToDb,
-            MicroOp::InsToPc,
-            MicroOp::InsToPcIfZero,
-            MicroOp::PcInc,
-            MicroOp::PcIncIfZero,
-            MicroOp::McZero,
-            MicroOp::Stop,
-        ],
-    );
+    micro_buttons(ui, machine, &BUTTONS);
 
     let message = record(ui, machine);
 

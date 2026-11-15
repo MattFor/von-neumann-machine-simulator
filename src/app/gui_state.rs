@@ -1,8 +1,9 @@
 use crate::debugger::debug::Debug as DebugState;
 use crate::machine::InstructionSet;
 use crate::machine::Machine;
-use crate::program::{Program, is_ram};
-use std::time::Instant;
+use crate::program::{Program, has_extension, is_ram};
+use std::path::Path;
+use std::time::{Duration, Instant};
 
 pub const MIN_SPEED: usize = 1;
 pub const MAX_SPEED: usize = 10_000;
@@ -133,10 +134,64 @@ impl AppState {
         self.sync_running();
     }
 
+    pub fn back(&mut self) {
+        self.running = false;
+
+        if self.machine.back() {
+            self.status_message = "Stepped back".to_string();
+        }
+    }
+
     pub fn sync_running(&mut self) {
         if self.machine.halted {
             self.running = false;
         }
+    }
+
+    // Runs the instructions that came due since the last tick.
+    pub fn tick(&mut self, now: Instant) {
+        if !self.running || self.machine.waiting {
+            return;
+        }
+
+        let secs_per_instruction = 1.0 / self.speed as f64;
+        // Clamped so a stall (file dialog, waiting for input) is not replayed as a burst. Slow
+        // speeds tick once per instruction, a little late, so the clamp is on top of one.
+        let dt = (now - self.last_tick)
+            .as_secs_f64()
+            .min(secs_per_instruction + 0.1);
+        self.last_tick = now;
+
+        self.time_accumulator += dt;
+        let steps = (self.time_accumulator / secs_per_instruction).floor() as usize;
+
+        if self.machine.run_steps(steps) {
+            self.running = false;
+            let machine = &self.machine;
+            let pc = machine.cpu.pc;
+
+            // Off a breakpoint, the format stopped it on an instruction that kept the pc.
+            self.status_message = format!(
+                "{} at {}",
+                if machine.breakpoints.contains(&pc) {
+                    "Breakpoint"
+                } else {
+                    "Stopped"
+                },
+                machine.instruction_set.format.operand_text(pc as i32)
+            );
+        }
+
+        self.time_accumulator -= steps as f64 * secs_per_instruction;
+
+        self.sync_running();
+    }
+
+    // How long until the next instruction is due, if one is.
+    pub fn due(&self) -> Option<Duration> {
+        let left = 1.0 / self.speed as f64 - self.time_accumulator;
+
+        (self.running && !self.machine.waiting).then(|| Duration::from_secs_f64(left.max(0.0)))
     }
 
     pub fn status(&self) -> &'static str {
@@ -264,9 +319,14 @@ impl AppState {
             return;
         };
 
-        match Program::load(&path, &self.machine.instruction_set) {
+        self.open_program_at(&path);
+    }
+
+    pub fn open_program_at(&mut self, path: &Path) {
+        match Program::load(path, &self.machine.instruction_set) {
             Ok(program) => {
-                if is_ram(&path) && !self.machine.instruction_set.format.johnny_compatible() {
+                // Johnny's files go to Johnny even from Bonsai, whose words are the same.
+                if is_ram(path) {
                     self.route(&InstructionSet::johnny());
                 }
 
@@ -322,8 +382,18 @@ impl AppState {
             return;
         };
 
-        match InstructionSet::load(&path) {
-            Ok(set) => self.use_set(set),
+        self.open_set_at(&path);
+    }
+
+    pub fn open_set_at(&mut self, path: &Path) {
+        match InstructionSet::load(path) {
+            Ok(set) => {
+                if has_extension(path, "mc") {
+                    self.route(&InstructionSet::johnny());
+                }
+
+                self.use_set(set);
+            }
 
             Err(error) => {
                 self.status_message = format!("Could not load instruction set: {error}");
@@ -426,6 +496,76 @@ mod tests {
         state.pick(0);
 
         assert_eq!(state.machine.memory.read(0), 0x0a0b);
+    }
+
+    #[test]
+    fn johnny_files_opened_on_bonsai_go_to_johnny_and_leave_bonsai_alone() {
+        let ram = std::env::temp_dir().join("vnm-test-bonsai.ram");
+        let mc = std::env::temp_dir().join("vnm-test-bonsai.mc");
+        std::fs::write(&ram, include_str!("../../assets/sum.ram")).unwrap();
+        std::fs::write(&mc, "0\n".repeat(200)).unwrap();
+
+        for path in [&ram, &mc] {
+            let mut state = AppState::new();
+            state.pick(2);
+            state.machine.memory.write(0, 5);
+
+            if is_ram(path) {
+                state.open_program_at(path);
+            } else {
+                state.open_set_at(path);
+            }
+
+            assert_eq!(state.preset, 1, "{path:?}");
+
+            state.pick(2);
+
+            assert_eq!(state.machine.memory.read(0), 5);
+            assert_eq!(state.machine.instruction_set, InstructionSet::presets()[2]);
+        }
+
+        std::fs::remove_file(&ram).unwrap();
+        std::fs::remove_file(&mc).unwrap();
+    }
+
+    #[test]
+    fn a_slow_run_ticks_once_per_instruction_at_the_same_speed() {
+        let mut state = AppState::new();
+        state.speed = 1;
+        state.running = true;
+        let start = state.last_tick;
+
+        state.tick(start + Duration::from_millis(400));
+
+        let due = state.due().unwrap();
+
+        assert_eq!(state.machine.cpu.pc, 0);
+        assert!((Duration::from_millis(590)..=Duration::from_millis(600)).contains(&due));
+
+        // Woken when it is due, the instruction runs; a long stall is not replayed as a burst.
+        state.tick(start + Duration::from_millis(1001));
+
+        assert_eq!(state.machine.cpu.pc, 1);
+
+        state.tick(start + Duration::from_secs(10));
+
+        assert_eq!(state.machine.cpu.pc, 2);
+
+        state.back();
+
+        assert_eq!((state.machine.cpu.pc, state.running, state.due()), (1, false, None));
+
+        // Frames that come a little after the instruction was due do not slow the run down.
+        let mut state = AppState::new();
+        state.speed = 10;
+        state.running = true;
+        let start = state.last_tick;
+
+        for frame in 1..=100 {
+            state.tick(start + Duration::from_millis(108 * frame));
+        }
+
+        assert!((107..=108).contains(&state.machine.cpu.pc), "{}", state.machine.cpu.pc);
     }
 
     #[test]

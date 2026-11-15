@@ -13,7 +13,7 @@ use std::ops::RangeInclusive;
 
 use egui::{KeyboardShortcut, Ui};
 
-use crate::machine::{DataEncoding, Format, Machine, MicroOp};
+use crate::machine::{DataEncoding, Format, InstructionSet, Machine, MicroOp};
 
 // A button that also fires on its keyboard shortcut.
 pub fn action(
@@ -33,10 +33,42 @@ pub fn action(
         || pressed
 }
 
+// Micro steps only some machines use; they get a button when the loaded set has them.
+const OCCASIONAL: [MicroOp; 14] = [
+    MicroOp::InsToPcIfNonNegative,
+    MicroOp::InsToPcIfNegative,
+    MicroOp::InsToPcIfCarry,
+    MicroOp::InsToPcIfZeroFlag,
+    MicroOp::PcToDb,
+    MicroOp::ReturnToDb,
+    MicroOp::PcIncIfPositive,
+    MicroOp::PcIncIfNegative,
+    MicroOp::DbToAb,
+    MicroOp::AbToPc,
+    MicroOp::AbLast,
+    MicroOp::Shift,
+    MicroOp::InputToDb,
+    MicroOp::DbToOut,
+];
+
+// The micro steps of `ops` that get a button: the usual ones, and the others the set uses.
+pub fn hand_ops(set: &InstructionSet, ops: &[MicroOp]) -> Vec<MicroOp> {
+    ops.iter()
+        .copied()
+        .filter(|op| {
+            !OCCASIONAL.contains(op)
+                || set
+                    .definitions
+                    .iter()
+                    .any(|definition| definition.steps().contains(op))
+        })
+        .collect()
+}
+
 // Buttons that fire micro steps by hand.
 pub fn micro_buttons(ui: &mut Ui, machine: &mut Machine, ops: &[MicroOp]) {
     ui.horizontal_wrapped(|ui| {
-        for &op in ops {
+        for op in hand_ops(&machine.instruction_set, ops) {
             let (label, hint) = op.info();
 
             if ui.button(label).on_hover_text(hint).clicked() {
@@ -73,4 +105,40 @@ pub fn listing(steps: &[MicroOp]) -> String {
     let labels: Vec<&str> = steps.iter().map(|op| op.info().0).collect();
 
     labels.join("  ")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn every_micro_step_of_the_loaded_set_has_one_button_and_the_others_none() {
+        let bus = [MicroOp::RamToDb, MicroOp::DbToRam, MicroOp::AccToDb, MicroOp::DbToAcc];
+        let all = [&cpu_view::BUTTONS[..], &control_unit_view::BUTTONS[..], &bus[..]].concat();
+
+        for op in MicroOp::ALL {
+            assert_eq!(all.iter().filter(|other| **other == op).count(), 1, "{op:?}");
+        }
+
+        for set in InstructionSet::presets() {
+            let shown = [
+                hand_ops(&set, &cpu_view::BUTTONS),
+                hand_ops(&set, &control_unit_view::BUTTONS),
+                bus.to_vec(),
+            ]
+            .concat();
+
+            for definition in &set.definitions {
+                for op in definition.steps() {
+                    assert!(shown.contains(op), "{} {op:?}", set.name);
+                }
+            }
+        }
+
+        let standard = InstructionSet::default();
+
+        assert!(!hand_ops(&standard, &MicroOp::ALL).contains(&MicroOp::Shift));
+        assert!(hand_ops(&InstructionSet::cardiac(), &MicroOp::ALL).contains(&MicroOp::Shift));
+        assert!(hand_ops(&InstructionSet::sap1(), &MicroOp::ALL).contains(&MicroOp::InsToPcIfCarry));
+    }
 }

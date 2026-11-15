@@ -75,5 +75,47 @@ fn visuals(mut visuals: Visuals, palette: [u32; 8]) -> Visuals {
         state.corner_radius = radius;
     }
 
+    // The fill of a checkbox's box, a radio button and a slider's rail, but not of buttons; in the
+    // widget colour an unticked box all but vanished into the light cards.
+    if !visuals.dark_mode {
+        widgets.inactive.bg_fill = Color32::from_rgb(0xb4, 0xba, 0xc4);
+    }
+
     visuals
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn an_unticked_box_stands_out_in_light_and_dark_stays_as_it_was() {
+        let light = visuals(Visuals::light(), LIGHT);
+        let dark = visuals(Visuals::dark(), DARK);
+        let apart = |a: Color32, b: Color32| {
+            (0..3)
+                .map(|channel| a.to_array()[channel].abs_diff(b.to_array()[channel]))
+                .max()
+                .unwrap()
+        };
+        let fill = light.widgets.inactive.bg_fill;
+
+        assert!(apart(fill, light.window_fill) >= 48 && apart(fill, light.panel_fill) >= 48);
+        assert_eq!(light.widgets.inactive.weak_bg_fill, Color32::from_rgb(0xe4, 0xe7, 0xec));
+        assert_eq!(dark.widgets.inactive.bg_fill, Color32::from_rgb(0x2a, 0x2e, 0x37));
+
+        // That is the fill egui paints the box with.
+        let ctx = Context::default();
+        apply(&ctx);
+        ctx.set_theme(Theme::Light);
+
+        let mut output = ctx.run_ui(Default::default(), |ui| {
+            ui.checkbox(&mut false, "box");
+        });
+        output.textures_delta.clear();
+
+        assert!(output.shapes.iter().any(
+            |clipped| matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == fill)
+        ));
+    }
 }
