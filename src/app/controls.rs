@@ -17,7 +17,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui,
             true,
             "\u{1F5C1} Open Program",
-            "Open a program file, a Johnny .ram file, or an .asm text file in the loaded instruction set",
+            "Open a program file, a Johnny .ram file, an .asm text file in the loaded instruction set, \
+             or a MARIE .mas file",
             OPEN,
         ) {
             state.open_program();
@@ -27,7 +28,8 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
             ui,
             true,
             "\u{1F4BE} Save Program",
-            "Save the memory and the instruction set to a file; name it .ram for a Johnny file or .asm for text",
+            "Save the memory and the instruction set to a file; name it .ram for a Johnny file, .asm \
+             for text or .mas for MARIE",
             SAVE,
         ) {
             state.save_program();

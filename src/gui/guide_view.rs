@@ -99,7 +99,10 @@ const SECTIONS: [(&str, &str); 9] = [
          says where the program starts. Without it, it starts at the first instruction or \
          number.\n\n\
          Save a program under a name ending in .asm to write it as text. Cells that hold no \
-         instruction come out as DAT, and a start other than 0 as END.",
+         instruction come out as DAT, and a start other than 0 as END.\n\n\
+         Files ending in .mas are MARIE's own: Open Program reads them in MARIE's mnemonics, \
+         whatever machine is loaded, and switches to MARIE. Saving under .mas writes a MARIE \
+         program that way.",
     ),
     (
         "Machines",
@@ -107,8 +110,12 @@ const SECTIONS: [(&str, &str); 9] = [
          then a byte of operand. Johnny works like the Johnny simulator: decimal words, 1000 \
          cells and the instructions TAKE, ADD, SUB, SAVE, JMP, TST, INC, DEC, NULL and HLT. \
          Bonsai is Johnny with its minimal five instructions. The Little Man Computer has 100 \
-         mailboxes of three decimal digits, and MARIE 4096 cells of 16-bit hex words. Each \
-         machine keeps its own program, so switching back and forth loses nothing.\n\n\
+         mailboxes of three decimal digits, and MARIE 4096 cells of 16-bit hex words. CARDIAC, \
+         Bell Labs' cardboard computer, has 100 cells of a sign and three decimal digits and a \
+         four-digit accumulator. Its cell 00 always holds 001, the loader: run from 00, it \
+         reads the next input into 01 and carries on there. JMP leaves a jump back in cell 99, \
+         and SFT 21 shifts the accumulator 2 digits left, then 1 right. Each machine keeps its \
+         own program, so switching back and forth loses nothing.\n\n\
          Once the instruction set or its format matches none of them, the picker says Custom. \
          Picking the machine again gives it its own set back and keeps the memory.\n\n\
          Example has a program for every machine and loads it on its machine.\n\n\
@@ -147,12 +154,23 @@ fn machine_text(machine: &Machine) -> String {
             " Negative numbers are stored in two's complement, so -1 is {}.",
             format.text(format.word(-1), format.code_digits + format.operand_digits)
         ),
-        DataEncoding::Lmc => " A cell keeps its sign, from -999 to 999.".to_string(),
+        DataEncoding::Lmc => {
+            " A cell keeps its sign, from -999 to 999; a wider value keeps its low three digits."
+                .to_string()
+        }
     };
     let after_last = match format.pc_overflow {
         PcOverflow::Wrap => "it goes back to 0".to_string(),
         PcOverflow::Stay => format!("it stays on {last}"),
         PcOverflow::Halt => "the machine halts".to_string(),
+    };
+    let fixed = match format.fixed_cell {
+        Some((cell, word)) => format!(
+            " Cell {} always holds {} and can't be changed.",
+            format.operand_text(cell as i32),
+            format.text(word, format.code_digits + format.operand_digits)
+        ),
+        None => String::new(),
     };
     let unknown = match format.unknown_code {
         UnknownCode::Nop => "is skipped",
@@ -173,7 +191,7 @@ fn machine_text(machine: &Machine) -> String {
          {last}. Every cell is one word: an instruction code and an operand, usually the address \
          the instruction works on. Words are written in {radix}: {} of code, then {} of operand, \
          so {code}{operand} is code {code} with operand {operand}. There are {} codes; a word \
-         whose code is no instruction {unknown}.\n\n\
+         whose code is no instruction {unknown}.{fixed}\n\n\
          ACC is the accumulator, where all arithmetic happens. It stays between {} and {}.\
          {negative}\n\
          PC is the program counter, the address of the next instruction. After the last cell \
@@ -308,6 +326,7 @@ mod tests {
             (InstructionSet::johnny(), ["in decimal", "2 digits of code", "stays on 999"]),
             (InstructionSet::lmc(), ["1 digit of code", "-999 and 999", "keeps its sign"]),
             (InstructionSet::marie(), ["4096 cells", "100A is code 1", "-1 is FFFF"]),
+            (InstructionSet::cardiac(), ["is CARDIAC", "-9999 and 9999", "Cell 00 always holds 001"]),
         ] {
             machine.instruction_set = preset;
             let text = machine_text(&machine);

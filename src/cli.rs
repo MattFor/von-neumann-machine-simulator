@@ -9,11 +9,11 @@ use crate::utilities::parse_value;
 const HELP: &str = "\
 Usage: von-neumann-machine-simulator [run <file> [options]]
 
-Without arguments the window opens. `run` runs a program (.json, .ram or .asm) without it,
+Without arguments the window opens. `run` runs a program (.json, .ram, .asm or .mas) without it,
 to a halt or the step limit, and prints its output to stdout, one value per line.
 
 Options:
-  --machine <name>  standard, johnny, bonsai, lmc or marie. Default: the set in the file,
+  --machine <name>  standard, johnny, bonsai, lmc, marie or cardiac. Default: the set in the file,
                     Johnny for .ram. An .asm file needs it
   --input <values>  numbers for IN to read, separated by commas: --input 1,2,3
   --max-steps <n>   how many instructions to run at most (default 100000)
@@ -25,7 +25,7 @@ Exit codes: 0 halted, 1 bad arguments or file, 2 step limit reached,
 ";
 
 // In the order of InstructionSet::presets.
-const MACHINES: [&str; 5] = ["standard", "johnny", "bonsai", "lmc", "marie"];
+const MACHINES: [&str; 6] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac"];
 
 struct Options {
     path: String,

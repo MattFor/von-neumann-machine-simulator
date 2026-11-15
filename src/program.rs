@@ -129,6 +129,16 @@ pub fn examples() -> Vec<Example> {
             serde_json::from_str(include_str!("../assets/marie-echo.json"))
                 .expect("bundled MARIE example is valid"),
         ),
+        example(
+            "CARDIAC digits",
+            InstructionSet::cardiac(),
+            Program::from_asm(
+                "digits",
+                include_str!("../assets/cardiac-digits.asm"),
+                &InstructionSet::cardiac(),
+            )
+            .expect("bundled CARDIAC example is valid"),
+        ),
     ]
 }
 
@@ -176,8 +186,19 @@ impl Program {
         words.join("\r\n")
     }
 
-    // Files ending in .ram are Johnny programs, .asm are text in the mnemonics of `set`,
-    // everything else is JSON.
+    pub fn from_asm(name: &str, text: &str, set: &InstructionSet) -> anyhow::Result<Self> {
+        let (memory, entry_point) = assembled(text, set)?;
+
+        Ok(Self {
+            name: name.to_string(),
+            entry_point,
+            memory,
+            instruction_set: None,
+        })
+    }
+
+    // Files ending in .ram are Johnny programs, .asm are text in the mnemonics of `set`, .mas
+    // are MARIE's, everything else is JSON.
     pub fn load(path: &Path, set: &InstructionSet) -> anyhow::Result<Self> {
         let text = read_text(path)?;
         let name = path.file_stem().unwrap_or_default().to_string_lossy();
@@ -185,13 +206,13 @@ impl Program {
         let program: Self = if is_ram(path) {
             Self::from_ram(&name, &text)?
         } else if has_extension(path, "asm") {
-            let (memory, entry_point) = assembled(&text, set)?;
+            Self::from_asm(&name, &text, set)?
+        } else if has_extension(path, "mas") {
+            let marie = InstructionSet::marie();
 
             Self {
-                name: name.to_string(),
-                entry_point,
-                memory,
-                instruction_set: None,
+                instruction_set: Some(marie.clone()),
+                ..Self::from_asm(&name, &text, &marie)?
             }
         } else {
             serde_json::from_str(&text)?
@@ -222,11 +243,23 @@ impl Program {
             validate_ram_program(self, &InstructionSet::johnny())?;
 
             self.to_ram()
-        } else if has_extension(path, "asm") {
-            let set = self
-                .instruction_set
-                .as_ref()
-                .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?;
+        } else if has_extension(path, "asm") || has_extension(path, "mas") {
+            let marie = InstructionSet::marie();
+            let set = if has_extension(path, "mas") {
+                // .mas files always load as MARIE programs.
+                anyhow::ensure!(
+                    self.instruction_set
+                        .as_ref()
+                        .is_none_or(|set| set.format == marie.format),
+                    "a .mas file holds MARIE's words: 16-bit hex, 1 code digit and 3 operand digits"
+                );
+
+                &marie
+            } else {
+                self.instruction_set
+                    .as_ref()
+                    .ok_or_else(|| anyhow::anyhow!("an .asm file needs the instruction set"))?
+            };
             validate_program(self, Some(set))?;
             let text = disassemble(&self.memory, self.entry_point, set);
 
@@ -513,6 +546,34 @@ mod tests {
         assert!(text.contains("DAT -5\n"));
         assert_eq!(loaded.memory, saved.memory);
         assert_eq!(loaded.entry_point, saved.entry_point);
+    }
+
+    #[test]
+    fn mas_files_are_marie_programs_whatever_set_is_loaded() {
+        let path = std::env::temp_dir().join("vnm-test-echo.MAS");
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.load(&[0x5000, 0x6000, 0x7000, 0xFFE9]);
+
+        Program::from_machine("echo".to_string(), &machine)
+            .save(&path)
+            .unwrap();
+        let text = fs::read_to_string(&path).unwrap();
+        let program = Program::load(&path, &InstructionSet::lmc()).unwrap();
+
+        assert!(text.starts_with("Input 0\nOutput 0\nHalt 0\nDEC -23\n"));
+        assert_eq!(program.memory, [0x5000, 0x6000, 0x7000, 0xFFE9]);
+        assert_eq!(program.instruction_set, Some(InstructionSet::marie()));
+
+        machine.instruction_set = InstructionSet::lmc();
+        fs::remove_file(&path).unwrap();
+        let error = Program::from_machine("x".to_string(), &machine)
+            .save(&path)
+            .unwrap_err();
+        let written = fs::remove_file(&path).is_ok();
+
+        assert!(error.to_string().contains("MARIE's words"));
+        assert!(!written);
     }
 
     #[test]

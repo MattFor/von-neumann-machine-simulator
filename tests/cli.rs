@@ -208,3 +208,10 @@ fn help_is_printed() {
     assert_eq!(code, 0);
     assert!(stdout.contains("--max-steps"));
 }
+
+#[test]
+fn cardiac_example_prints_the_digits() {
+    let (stdout, _, code) = run(&["assets/cardiac-digits.asm", "--machine", "cardiac"]);
+
+    assert_eq!((stdout.as_str(), code), ("4\n7\n2\n", 0));
+}

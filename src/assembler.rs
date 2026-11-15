@@ -635,6 +635,32 @@ mod tests {
     }
 
     #[test]
+    fn a_cardiac_program_with_negative_data_round_trips_and_runs() {
+        let set = InstructionSet::cardiac();
+        let (memory, entry_point, output) = run(
+            &[
+                "; adds -42 to the input and prints it",
+                "        ORG 10",
+                "start   INP x",
+                "        CLA x",
+                "        ADD neg",
+                "        STO x",
+                "        OUT x",
+                "        HRS start",
+                "neg     DAT -42",
+                "x       DAT",
+            ],
+            set.clone(),
+            30,
+        );
+
+        assert_eq!(entry_point, 10);
+        assert_eq!(memory[10..], [17, 117, 216, 617, 517, 910, -42, 0]);
+        assert!(disassemble(&memory, entry_point, &set).ends_with("HRS 10\nDAT -42\n"));
+        assert_eq!(output, "-12\n");
+    }
+
+    #[test]
     fn numbers_are_in_the_radix_unless_a_prefix_says_otherwise() {
         let text = "a: DAT 10\nDAT 0x10\nDAT 0d10\nDAT 0b10\nDAT 0B11\nDAT\nLOAD a";
 
