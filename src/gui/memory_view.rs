@@ -64,7 +64,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
 
 fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
     ui.horizontal(|ui| {
-        let id = egui::Id::new("address_bus_edit");
+        let id = egui::Id::unique("address_bus_edit");
         let mut address_bus: String = ui
             .data(|data| data.get_temp(id))
             .unwrap_or(DEFAULT_ADDRESS.to_string());
@@ -86,7 +86,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
                 parse_value(&address_bus).filter(|address| (0..=last).contains(address))
         {
             machine.cpu.mar = parsed_address as u16;
-            ui.data_mut(|data| data.insert_temp(egui::Id::new(SCROLL_TO), parsed_address as usize));
+            ui.data_mut(|data| data.insert_temp(egui::Id::unique(SCROLL_TO), parsed_address as usize));
         }
     });
 }
@@ -109,12 +109,12 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
     let scroll_height = (ui.available_height() - footer_height).max(0.0);
 
     // Follow the program counter only when it moves, so manual scrolling still works.
-    let pc_id = egui::Id::new("memory_last_pc");
+    let pc_id = egui::Id::unique("memory_last_pc");
     let pc_moved = ui.data_mut(|data| std::mem::replace(data.get_temp_mut_or(pc_id, pc), pc)) != pc;
 
     // An address bus set by hand is shown once too.
     let target = ui
-        .data_mut(|data| data.remove_temp::<usize>(egui::Id::new(SCROLL_TO)))
+        .data_mut(|data| data.remove_temp::<usize>(egui::Id::unique(SCROLL_TO)))
         .or(pc_moved.then_some(pc));
 
     let address_bus = machine.cpu.mar as usize;

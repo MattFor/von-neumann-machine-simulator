@@ -38,7 +38,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         });
 
     ui.horizontal(|ui| {
-        let id = egui::Id::new("console_input");
+        let id = egui::Id::unique("console_input");
         let mut input: String = ui.data(|data| data.get_temp(id)).unwrap_or_default();
 
         let field = ui.add(

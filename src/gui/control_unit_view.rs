@@ -91,7 +91,7 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     let mut message = None;
 
     ui.horizontal(|ui| {
-        let id = egui::Id::new("record_name");
+        let id = egui::Id::unique("record_name");
         let mut name: String = ui
             .data(|data| data.get_temp(id))
             .unwrap_or_else(|| "NEW".to_string());

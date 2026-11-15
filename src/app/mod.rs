@@ -90,7 +90,7 @@ impl eframe::App for VnmApp {
                 }
 
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    egui::widgets::global_theme_preference_switch(ui);
+                    egui::widgets::global_theme_preference_buttons(ui);
 
                     // Framed, so that they read as switches and not as text.
                     if ui
