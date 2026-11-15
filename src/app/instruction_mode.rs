@@ -57,7 +57,7 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     ui.separator();
 
     crate::gui::format_view::show(ui, &mut state.machine.instruction_set);
-    state.machine.fit_entry_point();
+    state.machine.fit_to_cells();
 
     ui.separator();
 

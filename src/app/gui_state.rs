@@ -260,7 +260,7 @@ impl AppState {
             self.switch(preset);
         } else if preset_of(&self.machine.instruction_set).is_none() {
             self.machine.instruction_set = InstructionSet::presets()[preset].clone();
-            self.machine.fit_entry_point();
+            self.machine.fit_to_cells();
             self.running = false;
             self.status_message = format!("Restored the {} instruction set", PRESETS[preset].0);
         }
@@ -285,7 +285,7 @@ impl AppState {
 
         self.status_message = format!("Loaded the {} instruction set", set.name);
         self.machine.instruction_set = set;
-        self.machine.fit_entry_point();
+        self.machine.fit_to_cells();
     }
 
     pub fn load(&mut self, program: Program) {

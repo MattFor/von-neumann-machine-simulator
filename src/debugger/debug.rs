@@ -105,7 +105,7 @@ impl Debug {
             return false;
         };
 
-        state.machine.set_acc(value);
+        state.machine.edit_acc(value);
 
         true
     }
@@ -123,7 +123,7 @@ impl Debug {
 
         let cells = state.machine.instruction_set.format.cells().max(1) as i32;
         let cell = value.rem_euclid(cells);
-        state.machine.cpu.pc = cell as u16;
+        state.machine.edit_pc(cell as u16);
 
         Some((value, cell))
     }

@@ -111,7 +111,7 @@ impl Machine {
 
     pub fn reset(&mut self) {
         self.cpu.reset();
-        self.fit_entry_point();
+        self.fit_to_cells();
         self.cpu.pc = self.entry_point;
         self.previous = self.cpu;
 
@@ -126,8 +126,9 @@ impl Machine {
         self.history.clear();
     }
 
-    // Into the format's cells, for when they shrink under it.
-    pub fn fit_entry_point(&mut self) {
+    // The entry point into the format's cells, for when they shrink under it. The PC is left
+    // alone: every fetch reduces it, and the Format tab applies each keystroke.
+    pub fn fit_to_cells(&mut self) {
         self.entry_point = self.address(self.entry_point as i32);
     }
 
@@ -145,6 +146,17 @@ impl Machine {
             self.memory.write(address, word);
             self.history.clear();
         }
+    }
+
+    // Registers set by hand, like a cell: the steps before can't be undone.
+    pub fn edit_pc(&mut self, pc: u16) {
+        self.cpu.pc = pc;
+        self.history.clear();
+    }
+
+    pub fn edit_acc(&mut self, value: i32) {
+        self.set_acc(value);
+        self.history.clear();
     }
 
     pub fn is_fixed(&self, address: usize) -> bool {
@@ -1626,6 +1638,37 @@ mod tests {
 
         assert_eq!(cardiac.memory.read(0), 0);
         assert!(cardiac.can_go_back());
+    }
+
+    // Back would put the registers from before the last step over the edit.
+    #[test]
+    fn history_is_forgotten_on_register_edits() {
+        let mut machine = Machine::new();
+        machine.step();
+        assert!(machine.can_go_back());
+
+        machine.edit_pc(7);
+
+        assert!(!machine.can_go_back() && machine.cpu.pc == 7);
+
+        machine.step();
+        machine.edit_acc(5);
+
+        assert!(!machine.can_go_back() && machine.cpu.acc == 5);
+    }
+
+    #[test]
+    fn fewer_cells_bring_the_entry_point_in_and_the_fetch_reduces_the_pc() {
+        let mut machine = Machine::new();
+        machine.entry_point = 150;
+        machine.cpu.pc = 160;
+        machine.instruction_set = InstructionSet::lmc();
+        machine.memory.write(60, 902);
+
+        machine.fit_to_cells();
+
+        assert_eq!((machine.entry_point, machine.cpu.pc), (50, 160));
+        assert_eq!(machine.next_word(), 902);
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;
