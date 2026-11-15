@@ -5,19 +5,24 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
     let (acc, mbr) = (machine.cpu.acc, machine.cpu.mbr);
 
     match op {
-        MicroOp::DbToRam => machine.memory.write(machine.cpu.mar as usize, mbr),
+        MicroOp::DbToRam => machine.write_data_bus(),
         MicroOp::RamToDb => {
             let value = machine.memory.read(machine.cpu.mar as usize);
 
-            machine.cpu.set_mbr(value);
+            machine.memory_to_data_bus(value);
         }
 
         MicroOp::DbToIns => machine.cpu.ir = mbr as u16,
         MicroOp::InsToAb => machine.cpu.mar = operand,
-        MicroOp::InsToDb => machine.cpu.set_mbr(operand as i32),
+        MicroOp::InsToDb => machine.set_data_bus(operand as i32),
         MicroOp::InsToPc => machine.cpu.pc = operand,
         MicroOp::InsToPcIfZero => {
             if acc == 0 {
+                machine.cpu.pc = operand;
+            }
+        }
+        MicroOp::InsToPcIfNonNegative => {
+            if acc >= 0 {
                 machine.cpu.pc = operand;
             }
         }
@@ -33,12 +38,25 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
         }
 
         MicroOp::PcToAb => machine.cpu.mar = machine.cpu.pc,
+        MicroOp::PcToDb => machine.set_data_bus(machine.cpu.pc as i32),
         MicroOp::PcInc => next_pc(machine),
         MicroOp::PcIncIfZero => {
             if acc == 0 {
                 next_pc(machine);
             }
         }
+        MicroOp::PcIncIfPositive => {
+            if acc > 0 {
+                next_pc(machine);
+            }
+        }
+        MicroOp::PcIncIfNegative => {
+            if acc < 0 {
+                next_pc(machine);
+            }
+        }
+        MicroOp::DbToAb => machine.cpu.mar = mbr as u16,
+        MicroOp::AbToPc => machine.cpu.pc = machine.cpu.mar,
 
         MicroOp::AccZero => machine.set_acc(0),
         MicroOp::AccInc => machine.set_acc(acc.saturating_add(1)),
@@ -55,7 +73,7 @@ pub fn execute(machine: &mut Machine, op: MicroOp) {
             }
         }
 
-        MicroOp::AccToDb => machine.cpu.set_mbr(acc),
+        MicroOp::AccToDb => machine.set_data_bus(acc),
         MicroOp::DbToAcc => machine.set_acc(mbr),
 
         MicroOp::Input => match machine.input.pop_front() {

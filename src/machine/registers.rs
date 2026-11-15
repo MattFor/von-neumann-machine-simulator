@@ -1,8 +1,8 @@
 const VALUE_MIN: i32 = 0;
 const VALUE_MAX: i32 = 19_999;
 
-// ponytail: not the format's accumulator range, so a negative accumulator stores as 0; widen it
-// with the 0..=65535 check in Program::load once a signed machine needs negative data in memory.
+// The default unsigned data bus range. Machine applies each format's signed encoding before
+// values reach the bus, leaving the existing presets with their original clamp.
 const MBR_MIN: i32 = VALUE_MIN;
 const MBR_MAX: i32 = 0xffff; // a whole word, so that instructions fit through the data bus
 

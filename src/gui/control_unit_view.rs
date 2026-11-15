@@ -56,13 +56,13 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     } else {
         machine.memory.read(machine.cpu.pc as usize)
     };
-    let code = machine.instruction_set.split(raw).0;
+    let (code, operand) = machine.instruction_set.split(raw);
 
     for (title, steps, active) in [
         ("Fetch".to_string(), &FETCH[..], !machine.executing),
         (
-            machine.instruction_set.mnemonic(code),
-            machine.instruction_set.steps(code),
+            machine.instruction_set.mnemonic_for(code, operand),
+            machine.instruction_set.steps_for(code, operand),
             machine.executing,
         ),
     ] {
@@ -134,6 +134,7 @@ fn record(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
                     ));
                     machine.instruction_set.definitions.push(Definition {
                         code,
+                        operand: None,
                         mnemonic: name.clone(),
                         opcode: Opcode::Custom,
                         micro,

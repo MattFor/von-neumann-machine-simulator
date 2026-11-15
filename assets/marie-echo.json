@@ -1,0 +1,5 @@
+{
+    "name": "marie-echo",
+    "entry_point": 0,
+    "memory": [20480, 24576, 28672]
+}

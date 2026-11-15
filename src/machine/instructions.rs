@@ -44,11 +44,17 @@ pub enum MicroOp {
     InsToDb,
     InsToPc,
     InsToPcIfZero,
+    InsToPcIfNonNegative,
     InsToMc,
     McZero,
     PcToAb,
+    PcToDb,
     PcInc,
     PcIncIfZero,
+    PcIncIfPositive,
+    PcIncIfNegative,
+    DbToAb,
+    AbToPc,
     AccZero,
     AccInc,
     AccDec,
@@ -72,7 +78,7 @@ pub const FETCH: [MicroOp; 4] = [
 ];
 
 impl MicroOp {
-    pub const ALL: [MicroOp; 24] = [
+    pub const ALL: [MicroOp; 30] = [
         MicroOp::DbToRam,
         MicroOp::RamToDb,
         MicroOp::DbToIns,
@@ -80,11 +86,17 @@ impl MicroOp {
         MicroOp::InsToDb,
         MicroOp::InsToPc,
         MicroOp::InsToPcIfZero,
+        MicroOp::InsToPcIfNonNegative,
         MicroOp::InsToMc,
         MicroOp::McZero,
         MicroOp::PcToAb,
+        MicroOp::PcToDb,
         MicroOp::PcInc,
         MicroOp::PcIncIfZero,
+        MicroOp::PcIncIfPositive,
+        MicroOp::PcIncIfNegative,
+        MicroOp::DbToAb,
+        MicroOp::AbToPc,
         MicroOp::AccZero,
         MicroOp::AccInc,
         MicroOp::AccDec,
@@ -149,6 +161,10 @@ impl MicroOp {
                 "Jump: copy the operand of the instruction register into the program counter",
             ),
             MicroOp::InsToPcIfZero => ("=0:ins->pc", "Jump only if the accumulator is zero"),
+            MicroOp::InsToPcIfNonNegative => (
+                ">=0:ins->pc",
+                "Jump only if the accumulator is zero or positive",
+            ),
             MicroOp::InsToMc => (
                 "ins->mc",
                 "Decode: carry on with the micro steps of the instruction in the instruction register",
@@ -158,11 +174,22 @@ impl MicroOp {
                 "End of the instruction: the next micro step starts a new fetch",
             ),
             MicroOp::PcToAb => ("pc->ab", "Put the program counter on the address bus"),
+            MicroOp::PcToDb => ("pc->db", "Put the program counter on the data bus"),
             MicroOp::PcInc => ("pc++", "Move the program counter to the next cell"),
             MicroOp::PcIncIfZero => (
                 "=0:pc++",
                 "Move the program counter on only if the accumulator is zero (skips an instruction)",
             ),
+            MicroOp::PcIncIfPositive => (
+                ">0:pc++",
+                "Move the program counter on only if the accumulator is positive",
+            ),
+            MicroOp::PcIncIfNegative => (
+                "<0:pc++",
+                "Move the program counter on only if the accumulator is negative",
+            ),
+            MicroOp::DbToAb => ("db->ab", "Put the data bus on the address bus"),
+            MicroOp::AbToPc => ("ab->pc", "Copy the address bus into the program counter"),
             MicroOp::AccZero => ("acc:=0", "Set the accumulator to zero"),
             MicroOp::AccInc => ("acc++", "Add one to the accumulator"),
             MicroOp::AccDec => ("acc--", "Subtract one from the accumulator"),
@@ -285,6 +312,8 @@ impl Opcode {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct Definition {
     pub code: i32,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub operand: Option<i32>,
     pub mnemonic: String,
     pub opcode: Opcode,
 
@@ -344,6 +373,17 @@ impl InstructionSet {
             .find(|definition| definition.code == code)
     }
 
+    pub fn find_instruction(&self, code: i32, operand: i32) -> Option<&Definition> {
+        self.definitions
+            .iter()
+            .find(|definition| definition.code == code && definition.operand == Some(operand))
+            .or_else(|| {
+                self.definitions
+                    .iter()
+                    .find(|definition| definition.code == code && definition.operand.is_none())
+            })
+    }
+
     pub fn steps(&self, code: i32) -> &[MicroOp] {
         let unknown = match self.format.unknown_code {
             UnknownCode::Nop => Opcode::Nop,
@@ -352,6 +392,26 @@ impl InstructionSet {
 
         self.find(code)
             .map_or(unknown.micro(), Definition::steps)
+    }
+
+    pub fn steps_for(&self, code: i32, operand: i32) -> &[MicroOp] {
+        let unknown = match self.format.unknown_code {
+            UnknownCode::Nop => Opcode::Nop,
+            UnknownCode::Halt => Opcode::Halt,
+        };
+
+        match self.find_instruction(code, operand) {
+            Some(definition) => definition.steps(),
+            None if self.find(code).is_some() => unknown.micro(),
+            None => self.steps(code),
+        }
+    }
+
+    pub fn mnemonic_for(&self, code: i32, operand: i32) -> String {
+        self.find_instruction(code, operand).map_or_else(
+            || format!("{} - ?", self.format.code_text(code)),
+            |definition| definition.mnemonic.clone(),
+        )
     }
 
     // The number of operands, which is also what one code is worth in a word.
@@ -418,6 +478,14 @@ impl InstructionSet {
             "instruction codes must be between 0 and {max}"
         );
 
+        let max_operand = self.limits().1;
+        anyhow::ensure!(
+            self.definitions.iter().all(|definition| definition
+                .operand
+                .is_none_or(|operand| (0..=max_operand).contains(&operand))),
+            "fixed instruction operands must be between 0 and {max_operand}"
+        );
+
         Ok(())
     }
 
@@ -454,6 +522,7 @@ impl InstructionSet {
 
                 set.definitions.push(Definition {
                     code: code as i32,
+                    operand: None,
                     mnemonic: if mnemonic.is_empty() {
                         format!("{code:02}")
                     } else {
@@ -485,6 +554,7 @@ impl InstructionSet {
                 .iter()
                 .map(|&(code, mnemonic, opcode)| Definition {
                     code,
+                    operand: None,
                     mnemonic: mnemonic.to_string(),
                     opcode,
                     micro: Vec::new(),
@@ -493,9 +563,15 @@ impl InstructionSet {
         }
     }
 
-    // The built-in sets: standard, Johnny and Bonsai.
-    pub fn presets() -> [Self; 3] {
-        [Self::default(), Self::johnny(), Self::bonsai()]
+    // The built-in sets: standard, Johnny, Bonsai, LMC and MARIE.
+    pub fn presets() -> [Self; 5] {
+        [
+            Self::default(),
+            Self::johnny(),
+            Self::bonsai(),
+            Self::lmc(),
+            Self::marie(),
+        ]
     }
 
     // The names and codes of the Johnny simulator.
@@ -533,6 +609,143 @@ impl InstructionSet {
                 (5, "HLT", Opcode::Halt),
             ],
         )
+    }
+
+    pub fn lmc() -> Self {
+        use MicroOp::*;
+
+        let mut set = Self::preset(
+            "LMC",
+            Format::lmc(),
+            &[
+                (1, "ADD", Opcode::Add),
+                (2, "SUB", Opcode::Sub),
+                (3, "STA", Opcode::Store),
+                (5, "LDA", Opcode::Load),
+                (6, "BRA", Opcode::Jump),
+                (7, "BRZ", Opcode::JumpIfZero),
+            ],
+        );
+
+        set.definitions.extend([
+            Definition {
+                code: 0,
+                operand: Some(0),
+                mnemonic: "HLT".to_string(),
+                opcode: Opcode::Halt,
+                micro: Vec::new(),
+            },
+            Definition {
+                code: 8,
+                operand: None,
+                mnemonic: "BRP".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![PcInc, InsToPcIfNonNegative, McZero],
+            },
+            Definition {
+                code: 9,
+                operand: Some(1),
+                mnemonic: "INP".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![Input, PcInc, McZero],
+            },
+            Definition {
+                code: 9,
+                operand: Some(2),
+                mnemonic: "OUT".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![Output, PcInc, McZero],
+            },
+        ]);
+
+        set
+    }
+
+    pub fn marie() -> Self {
+        use MicroOp::*;
+
+        let mut set = Self::preset(
+            "MARIE",
+            Format::marie(),
+            &[
+                (1, "Load", Opcode::Load),
+                (2, "Store", Opcode::Store),
+                (3, "Add", Opcode::Add),
+                (4, "Subt", Opcode::Sub),
+                (5, "Input", Opcode::Input),
+                (6, "Output", Opcode::Output),
+                (7, "Halt", Opcode::Halt),
+                (9, "Jump", Opcode::Jump),
+            ],
+        );
+
+        set.definitions.extend([
+            Definition {
+                code: 0,
+                operand: None,
+                mnemonic: "JnS".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![PcInc, PcToDb, InsToAb, DbToRam, InsToPc, PcInc, McZero],
+            },
+            Definition {
+                code: 8,
+                operand: Some(0x000),
+                mnemonic: "Skipcond <0".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![PcIncIfNegative, PcInc, McZero],
+            },
+            Definition {
+                code: 8,
+                operand: Some(0x400),
+                mnemonic: "Skipcond =0".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![PcIncIfZero, PcInc, McZero],
+            },
+            Definition {
+                code: 8,
+                operand: Some(0x800),
+                mnemonic: "Skipcond >0".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![PcIncIfPositive, PcInc, McZero],
+            },
+            Definition {
+                code: 10,
+                operand: None,
+                mnemonic: "Clear".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![AccZero, PcInc, McZero],
+            },
+            Definition {
+                code: 11,
+                operand: None,
+                mnemonic: "AddI".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![InsToAb, RamToDb, DbToAb, RamToDb, Plus, PcInc, McZero],
+            },
+            Definition {
+                code: 12,
+                operand: None,
+                mnemonic: "JumpI".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![InsToAb, RamToDb, DbToAb, AbToPc, McZero],
+            },
+            Definition {
+                code: 13,
+                operand: None,
+                mnemonic: "LoadI".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![InsToAb, RamToDb, DbToAb, RamToDb, DbToAcc, PcInc, McZero],
+            },
+            Definition {
+                code: 14,
+                operand: None,
+                mnemonic: "StoreI".to_string(),
+                opcode: Opcode::Custom,
+                micro: vec![InsToAb, RamToDb, DbToAb, AccToDb, DbToRam, PcInc, McZero],
+            },
+        ]);
+
+        set
     }
 }
 
@@ -611,6 +824,20 @@ mod tests {
             assert!(text.contains(r#""format": {"#) && !text.contains(r#""johnny""#));
             assert_eq!(set.format, preset.format);
         }
+    }
+
+    #[test]
+    fn definitions_with_fixed_operands_are_selected_by_both_fields() {
+        let lmc = InstructionSet::lmc();
+        let marie = InstructionSet::marie();
+
+        assert_eq!(lmc.mnemonic_for(9, 1), "INP");
+        assert_eq!(lmc.mnemonic_for(9, 2), "OUT");
+        assert!(lmc.find_instruction(9, 3).is_none());
+        assert_eq!(marie.mnemonic_for(8, 0x000), "Skipcond <0");
+        assert_eq!(marie.mnemonic_for(8, 0x400), "Skipcond =0");
+        assert_eq!(marie.mnemonic_for(8, 0x800), "Skipcond >0");
+        assert!(marie.find_instruction(8, 0x100).is_none());
     }
 
     #[test]
