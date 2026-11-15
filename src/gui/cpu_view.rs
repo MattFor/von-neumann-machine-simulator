@@ -79,3 +79,33 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         ],
     );
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::machine::{DataEncoding, InstructionSet};
+
+    // A smaller format leaves registers outside it until the machine next touches them.
+    #[test]
+    fn drawing_never_changes_a_register_the_format_no_longer_holds() {
+        let ctx = egui::Context::default();
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::lmc();
+        machine.cpu.pc = 150;
+        machine.cpu.acc = -5;
+        machine.cpu.mbr = -7;
+        machine.instruction_set.format.acc_min = 0;
+        machine.instruction_set.format.data_encoding = DataEncoding::Unsigned;
+
+        for _ in 0..2 {
+            ctx.run_ui(egui::RawInput::default(), |ui| {
+                show(ui, &mut machine);
+                super::super::data_bus_view::show(ui, ui.max_rect(), &mut machine, None, None, true);
+            })
+            .textures_delta
+            .clear();
+        }
+
+        assert_eq!((machine.cpu.pc, machine.cpu.acc, machine.cpu.mbr), (150, -5, -7));
+    }
+}

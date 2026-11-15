@@ -259,10 +259,15 @@ impl Machine {
         false
     }
 
-    pub fn current_instruction(&self) -> String {
+    // The word the next fetch puts in the instruction register, from the cell pc->ab picks.
+    pub fn next_word(&self) -> i32 {
         let cell = self.memory.read(self.address(self.cpu.pc as i32) as usize);
 
-        self.describe(self.instruction_set.format.fetched(cell))
+        self.instruction_set.format.fetched(cell)
+    }
+
+    pub fn current_instruction(&self) -> String {
+        self.describe(self.next_word())
     }
 
     pub fn describe(&self, raw: i32) -> String {
@@ -1040,6 +1045,23 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn the_next_word_is_read_from_the_cell_the_fetch_reduces_the_pc_to() {
+        let mut machine = Machine::new();
+        machine.instruction_set = InstructionSet::lmc();
+        machine.memory.write(5, 901);
+        machine.memory.write(105, 902);
+        machine.cpu.pc = 105;
+
+        let next = machine.next_word();
+
+        for op in FETCH {
+            machine.manual(op);
+        }
+
+        assert_eq!((next, machine.cpu.ir as i32), (901, 901));
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

@@ -54,9 +54,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) -> Option<String> {
     let raw = if machine.executing {
         machine.cpu.ir as i32
     } else {
-        let cell = machine.memory.read(machine.cpu.pc as usize);
-
-        machine.instruction_set.format.fetched(cell)
+        machine.next_word()
     };
     let (code, operand) = machine.instruction_set.split(raw);
 
