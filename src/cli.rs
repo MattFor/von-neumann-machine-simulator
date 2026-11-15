@@ -1,36 +1,42 @@
+use std::fmt::Display;
+use std::io::{self, ErrorKind, Write};
 use std::path::Path;
 
 use anyhow::Context;
 
 use crate::machine::{InstructionSet, Machine, Stop};
 use crate::program::{Program, has_extension, is_ram};
-use crate::utilities::parse_value;
 
 const HELP: &str = "\
 Usage: von-neumann-machine-simulator [run <file> [options]]
+       von-neumann-machine-simulator convert <in> <out> [--machine <name>]
 
 Without arguments the window opens. `run` runs a program (.json, .ram, .asm or .mas) without it,
-to a halt or the step limit, and prints its output to stdout, one value per line.
+to a halt or the step limit, and prints its output to stdout, one value per line. `convert`
+loads a program and saves it in the format of <out>'s extension.
 
 Options:
   --machine <name>  standard, johnny, bonsai, lmc, marie or cardiac. Default: the set in the file,
                     Johnny for .ram. An .asm file needs it
-  --input <values>  numbers for IN to read, separated by commas: --input 1,2,3
+  --input <values>  numbers for IN to read, separated by commas: --input 1,2,-3. 0x and 0b
+                    are words in the machine's encoding, so 0xFFFF is -1 on MARIE
   --max-steps <n>   how many instructions to run at most (default 100000)
   --trace           print every instruction to stderr: address, word, mnemonic, accumulator
   -h, --help        print this
 
-Exit codes: 0 halted, 1 bad arguments or file, 2 step limit reached,
-3 the program waited for input and none was left. Which one is said on stderr.
+Exit codes: 0 halted or converted, 1 bad arguments or file, 2 step limit reached,
+3 the program waited for input and none was left, 141 the reader of stdout or stderr went
+away, as `| head` does. A run says which on stderr.
 ";
 
 // In the order of InstructionSet::presets.
 const MACHINES: [&str; 6] = ["standard", "johnny", "bonsai", "lmc", "marie", "cardiac"];
 
 struct Options {
-    path: String,
+    convert: bool,
+    paths: Vec<String>,
     set: Option<InstructionSet>,
-    input: Vec<i32>,
+    input: Vec<String>,
     max_steps: usize,
     trace: bool,
 }
@@ -43,7 +49,15 @@ pub fn main(args: &[String]) -> i32 {
         return 0;
     }
 
-    match parse(args).and_then(run) {
+    let result = parse(args).and_then(|options| {
+        if options.convert {
+            convert(options)
+        } else {
+            run(options)
+        }
+    });
+
+    match result {
         Ok(code) => code,
 
         Err(error) => {
@@ -57,14 +71,20 @@ pub fn main(args: &[String]) -> i32 {
 fn parse(args: &[String]) -> anyhow::Result<Options> {
     let mut args = args.iter();
 
-    anyhow::ensure!(
-        args.next().is_some_and(|command| command == "run"),
-        "the only command is run"
-    );
+    let convert = match args.next().map(String::as_str) {
+        Some("run") => false,
+        Some("convert") => true,
+        _ => anyhow::bail!("the commands are run and convert"),
+    };
+    let (files, usage) = if convert {
+        (2, "convert <in> <out>")
+    } else {
+        (1, "run <file>")
+    };
 
-    let mut path = None;
     let mut options = Options {
-        path: String::new(),
+        convert,
+        paths: Vec::new(),
         set: None,
         input: Vec::new(),
         max_steps: 100_000,
@@ -89,17 +109,12 @@ fn parse(args: &[String]) -> anyhow::Result<Options> {
                 options.set = Some(set.1);
             }
 
-            "--input" => {
-                options.input = value()?
-                    .split(',')
-                    .map(|raw| {
-                        parse_value(raw)
-                            .ok_or_else(|| anyhow::anyhow!("{raw} is not a number"))
-                    })
-                    .collect::<anyhow::Result<_>>()?;
+            // Read once the machine is known, since its encoding decides what 0xFFFF is.
+            "--input" if !convert => {
+                options.input = value()?.split(',').map(str::to_string).collect();
             }
 
-            "--max-steps" => {
+            "--max-steps" if !convert => {
                 let raw = value()?;
 
                 options.max_steps = raw
@@ -107,25 +122,26 @@ fn parse(args: &[String]) -> anyhow::Result<Options> {
                     .with_context(|| format!("--max-steps {raw} is not a step count"))?;
             }
 
-            "--trace" => options.trace = true,
+            "--trace" if !convert => options.trace = true,
 
             flag if flag.starts_with('-') => anyhow::bail!("unknown option {flag}"),
 
-            file if path.is_none() => path = Some(file.to_string()),
+            file if options.paths.len() < files => options.paths.push(file.to_string()),
 
-            extra => anyhow::bail!("one file only, not also {extra}"),
+            extra => anyhow::bail!("{extra} is one file too many: {usage}"),
         }
     }
 
-    options.path = path.ok_or_else(|| anyhow::anyhow!("run needs a program file"))?;
+    anyhow::ensure!(options.paths.len() == files, "a file is missing: {usage}");
 
     Ok(options)
 }
 
-fn run(options: Options) -> anyhow::Result<i32> {
-    let path = Path::new(&options.path);
+// The program in `file` on --machine, else on the set it carries, Johnny for .ram.
+fn load(file: &str, set: Option<InstructionSet>) -> anyhow::Result<Program> {
+    let path = Path::new(file);
 
-    let set = match options.set {
+    let set = match set {
         Some(set) => Some(set),
         None if is_ram(path) => Some(InstructionSet::johnny()),
         None if has_extension(path, "asm") => {
@@ -135,13 +151,33 @@ fn run(options: Options) -> anyhow::Result<i32> {
     };
 
     let mut program = Program::load(path, set.as_ref().unwrap_or(&InstructionSet::default()))
-        .with_context(|| options.path.clone())?;
+        .with_context(|| file.to_string())?;
     program.instruction_set = set.or(program.instruction_set);
 
-    let mut machine = Machine::new();
-    program.apply(&mut machine);
+    Ok(program)
+}
 
-    for value in options.input {
+fn convert(options: Options) -> anyhow::Result<i32> {
+    let out = &options.paths[1];
+
+    load(&options.paths[0], options.set)?
+        .save(Path::new(out))
+        .with_context(|| out.clone())?;
+
+    Ok(0)
+}
+
+fn run(options: Options) -> anyhow::Result<i32> {
+    let mut machine = Machine::new();
+    load(&options.paths[0], options.set)?.apply(&mut machine);
+
+    let format = machine.instruction_set.format;
+
+    for raw in &options.input {
+        let value = format
+            .parse_input(raw)
+            .ok_or_else(|| anyhow::anyhow!("{raw} is not a number or a word of this machine"))?;
+
         machine.push_input(value);
     }
 
@@ -149,15 +185,15 @@ fn run(options: Options) -> anyhow::Result<i32> {
         print_output(machine);
 
         if options.trace {
-            let address = machine.instruction_set.format.operand_text(address as i32);
+            let address = format.operand_text(address as i32);
+            let acc = machine.cpu.acc;
 
-            eprintln!("{address}  {instruction}  acc {}", machine.cpu.acc);
+            print(io::stderr(), format_args!("{address}  {instruction}  acc {acc}"));
         }
     });
 
     print_output(&mut machine);
 
-    let format = machine.instruction_set.format;
     let at = format.operand_text(machine.cpu.pc as i32);
     let limit = options.max_steps;
     let (code, reason) = match stop {
@@ -167,7 +203,7 @@ fn run(options: Options) -> anyhow::Result<i32> {
         Stop::NoInput => (3, format!("stopped at {at}: waiting for input and none is left")),
     };
 
-    eprintln!("{reason}");
+    print(io::stderr(), reason);
 
     Ok(code)
 }
@@ -176,9 +212,20 @@ fn run(options: Options) -> anyhow::Result<i32> {
 fn print_output(machine: &mut Machine) {
     for line in std::mem::take(&mut machine.output).lines() {
         if line.starts_with("error:") {
-            eprintln!("{line}");
+            print(io::stderr(), line);
         } else {
-            println!("{line}");
+            print(io::stdout(), line);
         }
+    }
+}
+
+// A reader that went away, as `| head` does, ends the run with the 128 + SIGPIPE of other tools.
+fn print(mut out: impl Write, line: impl Display) {
+    if let Err(error) = writeln!(out, "{line}") {
+        if error.kind() == ErrorKind::BrokenPipe {
+            std::process::exit(141);
+        }
+
+        panic!("failed printing: {error}");
     }
 }

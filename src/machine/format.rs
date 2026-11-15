@@ -178,6 +178,21 @@ impl Format {
         i32::from_str_radix(text.trim(), self.radix).ok()
     }
 
+    // A value for IN: a decimal number, or a 0x or 0b word in the data encoding, so 0xFFFF is
+    // -1 on MARIE. Words wider than the 16-bit registers are refused.
+    pub fn parse_input(&self, raw: &str) -> Option<i32> {
+        let raw = raw.trim();
+        let radix = match raw.get(..2).map(str::to_ascii_lowercase).as_deref() {
+            Some("0x") => 16,
+            Some("0b") => 2,
+            _ => return raw.parse().ok(),
+        };
+
+        u16::from_str_radix(&raw[2..], radix)
+            .ok()
+            .map(|word| self.value(word.into()))
+    }
+
     // A word as the number it stands for: MARIE's FFFF is -1.
     pub fn value(&self, word: i32) -> i32 {
         match self.data_encoding {
@@ -294,6 +309,24 @@ mod tests {
         assert_eq!(Format::default().word(0x1234), 0x1234);
         assert_eq!(marie.fetched(0x8400), 0x8400);
         assert_eq!(lmc.fetched(-1), 0xffff);
+    }
+
+    #[test]
+    fn input_words_are_read_in_the_data_encoding() {
+        let marie = Format::marie();
+
+        assert_eq!(marie.parse_input("0xFFFF"), Some(-1));
+        assert_eq!(marie.parse_input(" 0Xffff "), Some(-1));
+        assert_eq!(marie.parse_input("0b1111111111111110"), Some(-2));
+        assert_eq!(marie.parse_input("0x7FFF"), Some(0x7fff));
+        assert_eq!(marie.parse_input("-7"), Some(-7));
+        assert_eq!(marie.parse_input("65535"), Some(65535));
+        assert_eq!(Format::default().parse_input("0xFFFF"), Some(0xffff));
+        assert_eq!(Format::lmc().parse_input("0x10"), Some(16));
+
+        for raw in ["0x10000", "0x-1", "0x", "0b2", "x", ""] {
+            assert_eq!(marie.parse_input(raw), None, "{raw}");
+        }
     }
 
     #[test]

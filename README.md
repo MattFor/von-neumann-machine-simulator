@@ -163,15 +163,26 @@ von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --inp
 
 - `--machine standard|johnny|bonsai|lmc|marie|cardiac` picks the machine. Without it, a file
   runs on the set it carries, `.ram` on Johnny and JSON on Standard; `.asm` needs it.
-- `--input 1,2,3` is what `IN` reads.
+- `--input 1,2,-3` is what `IN` reads. `0x` and `0b` values are words in the machine's
+  encoding, so `0xFFFF` is -1 on MARIE.
 - `--max-steps N` stops after `N` instructions (100000 by default).
 - `--trace` prints every instruction to stderr: address, word, mnemonic and the
   accumulator after it.
 
 The exit code says how it ended: 0 halted, 1 bad arguments or file, 2 step limit
-reached, 3 waiting for input with none left. `--help` lists all of it. Without
-arguments the window opens. [`tests/programs`](tests/programs) has textbook programs for
-every machine.
+reached, 3 waiting for input with none left, 141 the reader went away (`| head`), as with
+other tools. `--help` lists all of it. Without arguments the window opens.
+[`tests/programs`](tests/programs) has textbook programs for every machine.
+
+`convert` loads a program and saves it in the format of the output file's extension,
+`.json`, `.ram`, `.asm` or `.mas`:
+
+```sh
+von-neumann-machine-simulator convert tests/programs/marie-add.asm add.mas --machine marie
+```
+
+`--machine` works as for `run`. A program the output format cannot hold, like a Standard one
+as `.ram`, is refused with exit code 1.
 
 ## Building
 

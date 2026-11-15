@@ -1,21 +1,39 @@
-use std::process::Command;
+use std::fs;
+use std::process::{Command, Stdio};
 
 const ADD: &str = "tests/programs/lmc-add.asm";
 
-// stdout, stderr and the exit code of the binary's `run`.
-fn run(args: &[&str]) -> (String, String, i32) {
-    let output = Command::new(env!("CARGO_BIN_EXE_von-neumann-machine-simulator"))
-        .current_dir(env!("CARGO_MANIFEST_DIR"))
-        .arg("run")
-        .args(args)
-        .output()
-        .unwrap();
+fn binary() -> Command {
+    let mut command = Command::new(env!("CARGO_BIN_EXE_von-neumann-machine-simulator"));
+    command.current_dir(env!("CARGO_MANIFEST_DIR"));
+
+    command
+}
+
+// stdout, stderr and the exit code of the binary.
+fn call(args: &[&str]) -> (String, String, i32) {
+    let output = binary().args(args).output().unwrap();
 
     (
         String::from_utf8(output.stdout).unwrap(),
         String::from_utf8(output.stderr).unwrap(),
         output.status.code().unwrap(),
     )
+}
+
+fn run(args: &[&str]) -> (String, String, i32) {
+    call(&[&["run"], args].concat())
+}
+
+fn convert(args: &[&str]) -> (String, String, i32) {
+    call(&[&["convert"], args].concat())
+}
+
+// A path in the temp directory, as a string for the arguments.
+fn temp(name: &str) -> String {
+    let path = std::env::temp_dir().join(format!("vnm-cli-{name}"));
+
+    path.to_str().unwrap().to_string()
 }
 
 // stdout and the exit code of a program from tests/programs.
@@ -149,6 +167,8 @@ fn bad_arguments_and_files_exit_with_1() {
         &[ADD][..],
         &[ADD, "--machine", "pdp11"],
         &[ADD, "--machine", "lmc", "--input", "1,x"],
+        &[ADD, "--machine", "lmc", "--input", "0x10000"],
+        &[ADD, ADD, "--machine", "lmc"],
         &[ADD, "--machine", "lmc", "--max-steps"],
         &[ADD, "--machine", "lmc", "--fast"],
         &[ADD, "--machine", "marie"],
@@ -162,6 +182,110 @@ fn bad_arguments_and_files_exit_with_1() {
     }
 
     assert!(run(&[ADD]).1.contains("--machine"));
+    assert_eq!(call(&["frob"]).2, 1);
+}
+
+#[test]
+fn input_words_are_read_in_the_machines_encoding() {
+    assert_eq!(program("marie-add.asm", "marie", "0xFFFF,0b10"), halted("1\n"));
+    assert_eq!(program("marie-add.asm", "marie", "-1, 2"), halted("1\n"));
+    assert_eq!(program("lmc-add.asm", "lmc", "0x10,1"), halted("17\n"));
+}
+
+// What `| head` does: the reader goes away while the program still prints.
+#[test]
+fn a_closed_pipe_exits_with_141_without_a_panic() {
+    let path = temp("forever.asm");
+    fs::write(&path, "loop OUT\n BRA loop\n").unwrap();
+
+    let args = ["run", &path, "--machine", "lmc", "--max-steps", "1000000"];
+    let mut child = binary()
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(child.stdout.take());
+    let output = child.wait_with_output().unwrap();
+
+    let mut traced = binary()
+        .args(args)
+        .arg("--trace")
+        .stdout(Stdio::null())
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    drop(traced.stderr.take());
+    let traced = traced.wait().unwrap();
+    fs::remove_file(&path).unwrap();
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+
+    assert_eq!((output.status.code(), stderr.as_str()), (Some(141), ""));
+    assert_eq!(traced.code(), Some(141));
+}
+
+#[test]
+fn convert_moves_a_program_between_formats() {
+    let (asm, json, ram) = (temp("sum.asm"), temp("sum.json"), temp("sum.ram"));
+
+    for args in [
+        &["assets/sum.ram", &asm][..],
+        &[&asm, &json, "--machine", "johnny"],
+        &[&json, &ram],
+    ] {
+        assert_eq!(convert(args), (String::new(), String::new(), 0), "{args:?}");
+    }
+
+    let text = fs::read_to_string(&asm).unwrap();
+    let trace = run(&[&ram, "--trace"]);
+
+    for path in [&asm, &json, &ram] {
+        fs::remove_file(path).unwrap();
+    }
+
+    assert!(text.starts_with("TAKE 10\nADD 11\nSAVE 12\nHLT 0\n"), "{text}");
+    assert_eq!(trace, run(&["assets/sum.ram", "--trace"]));
+}
+
+#[test]
+fn converted_marie_programs_run_from_mas_and_json() {
+    let (mas, json) = (temp("add.mas"), temp("add.json"));
+
+    let made = [
+        convert(&["tests/programs/marie-add.asm", &mas, "--machine", "marie"]),
+        convert(&[&mas, &json]),
+    ];
+    let runs = [&mas, &json].map(|path| run(&[path, "--input", "12,30"]).0);
+
+    for path in [&mas, &json] {
+        fs::remove_file(path).unwrap();
+    }
+
+    assert_eq!(made.map(|(_, _, code)| code), [0, 0]);
+    assert_eq!(runs, ["42\n", "42\n"]);
+}
+
+#[test]
+fn convert_errors_exit_with_1() {
+    let out = temp("refused.ram");
+
+    for (args, message) in [
+        (&["assets/countdown.json", &out][..], "radix 10"),
+        (&[ADD, &out], "--machine"),
+        (&["assets/sum.ram"], "a file is missing"),
+        (&["assets/sum.ram", &out, &out], "one file too many"),
+        (&["assets/sum.ram", &out, "--trace"], "unknown option --trace"),
+        (&["tests/programs/missing.ram", &out], "missing.ram"),
+    ] {
+        let (stdout, stderr, code) = convert(args);
+
+        assert_eq!((stdout.as_str(), code), ("", 1), "{args:?}");
+        assert!(stderr.starts_with("error: "), "{args:?}: {stderr}");
+        assert!(stderr.contains(message), "{args:?}: {stderr}");
+    }
+
+    assert!(fs::metadata(&out).is_err());
 }
 
 #[test]
@@ -190,12 +314,11 @@ fn running_out_of_input_exits_with_3() {
 
 #[test]
 fn machine_errors_go_to_stderr() {
-    let path = std::env::temp_dir().join("vnm-cli-divide-by-zero.asm");
-    std::fs::write(&path, "IN\nOUT\nDIV 0\n").unwrap();
+    let path = temp("divide-by-zero.asm");
+    fs::write(&path, "IN\nOUT\nDIV 0\n").unwrap();
 
-    let path = path.to_str().unwrap();
-    let (stdout, stderr, code) = run(&[path, "--machine", "standard", "--input", "7"]);
-    std::fs::remove_file(path).unwrap();
+    let (stdout, stderr, code) = run(&[&path, "--machine", "standard", "--input", "7"]);
+    fs::remove_file(&path).unwrap();
 
     assert_eq!((stdout.as_str(), code), ("7\n", 0));
     assert!(stderr.contains("error: division by zero"), "{stderr}");
