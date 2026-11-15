@@ -47,10 +47,12 @@ pub fn micro_buttons(ui: &mut Ui, machine: &mut Machine, ops: &[MicroOp]) {
 }
 
 // A number field that shows and reads the radix of the format, padded to `width` digits.
+// Its range only limits edits, so that drawing a value a smaller format left behind keeps it.
 pub fn radix_drag(value: &mut i32, format: Format, width: u32) -> egui::DragValue<'_> {
     egui::DragValue::new(value)
         .custom_formatter(move |number, _| format.text(number as i32, width))
         .custom_parser(move |text| format.parse(text).map(f64::from))
+        .clamp_existing_to_range(false)
 }
 
 // A field for a number as the machine stores it: a whole word in its radix, so on MARIE FFFF is
