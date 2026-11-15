@@ -7,7 +7,7 @@ use crate::assembler::{assemble, disassemble};
 use crate::machine::{DataEncoding, InstructionSet, MEMORY_SIZE, Machine};
 use crate::utilities::read_text;
 
-fn has_extension(path: &Path, extension: &str) -> bool {
+pub fn has_extension(path: &Path, extension: &str) -> bool {
     path.extension()
         .is_some_and(|found| found.eq_ignore_ascii_case(extension))
 }

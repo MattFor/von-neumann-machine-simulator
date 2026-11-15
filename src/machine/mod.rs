@@ -21,6 +21,13 @@ const OUTPUT_LIMIT: usize = 16 * 1024;
 // More micro steps than this in one instruction means its micro program loops.
 const MICRO_LIMIT: usize = 1000;
 
+// Why Machine::run ended.
+pub enum Stop {
+    Halted,
+    StepLimit,
+    NoInput,
+}
+
 pub struct Machine {
     pub cpu: Registers,
     pub previous: Registers, // registers before the last step
@@ -257,6 +264,27 @@ impl Machine {
         }
 
         false
+    }
+
+    // Runs to a halt, to `limit` instructions or to an IN with no input left. `done` sees every
+    // instruction that finished, with the address and text it had before it ran.
+    pub fn run(&mut self, limit: usize, mut done: impl FnMut(&mut Self, u16, &str)) -> Stop {
+        for _ in 0..limit {
+            let (pc, instruction) = (self.cpu.pc, self.current_instruction());
+            let stopped = self.run_steps(1);
+
+            if self.waiting {
+                return Stop::NoInput;
+            }
+
+            done(self, pc, &instruction);
+
+            if self.halted || stopped {
+                return Stop::Halted;
+            }
+        }
+
+        Stop::StepLimit
     }
 
     pub fn current_instruction(&self) -> String {

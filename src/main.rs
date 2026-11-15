@@ -1,5 +1,6 @@
 mod app;
 mod assembler;
+mod cli;
 mod debugger;
 mod gui;
 mod machine;
@@ -7,6 +8,12 @@ mod program;
 mod utilities;
 
 fn main() -> eframe::Result {
+    let args: Vec<String> = std::env::args().skip(1).collect();
+
+    if !args.is_empty() {
+        std::process::exit(cli::main(&args));
+    }
+
     let options = eframe::NativeOptions {
         viewport: eframe::egui::ViewportBuilder::default()
             .with_inner_size([1180.0, 760.0])

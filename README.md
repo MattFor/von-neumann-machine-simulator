@@ -143,6 +143,26 @@ count:  DAT 5
 Saving under `.asm` writes this form: words that are no instruction come out as
 `DAT`, and a start other than 0 as `END n`.
 
+## Command line
+
+`run` runs a program without the window and prints its output, one value per line:
+
+```sh
+von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --input 12,30
+```
+
+- `--machine standard|johnny|bonsai|lmc|marie` picks the machine. Without it, a file
+  runs on the set it carries, `.ram` on Johnny and JSON on Standard; `.asm` needs it.
+- `--input 1,2,3` is what `IN` reads.
+- `--max-steps N` stops after `N` instructions (100000 by default).
+- `--trace` prints every instruction to stderr: address, word, mnemonic and the
+  accumulator after it.
+
+The exit code says how it ended: 0 halted, 1 bad arguments or file, 2 step limit
+reached, 3 waiting for input with none left. `--help` lists all of it. Without
+arguments the window opens. [`tests/programs`](tests/programs) has textbook programs for
+every machine.
+
 ## Building
 
 ```sh
