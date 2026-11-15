@@ -1,0 +1,5 @@
+{
+    "name": "lmc-echo",
+    "entry_point": 0,
+    "memory": [901, 902, 0]
+}

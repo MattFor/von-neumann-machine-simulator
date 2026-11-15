@@ -19,6 +19,15 @@ pub enum PcOverflow {
     Halt,
 }
 
+// How signed accumulator values travel through memory on this machine.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum DataEncoding {
+    #[default]
+    Unsigned,
+    TwosComplement,
+    Lmc,
+}
+
 // What the words of a machine look like and what it does at its edges.
 // Fields missing from a file are those of the standard machine.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -38,6 +47,9 @@ pub struct Format {
     pub acc_min: i32,
     pub acc_max: i32,
 
+    #[serde(default)]
+    pub data_encoding: DataEncoding,
+
     pub unknown_code: UnknownCode,
     pub pc_overflow: PcOverflow,
 
@@ -56,6 +68,7 @@ impl Default for Format {
             cells: None,
             acc_min: ACC_MIN,
             acc_max: ACC_MAX,
+            data_encoding: DataEncoding::Unsigned,
             unknown_code: UnknownCode::Nop,
             pc_overflow: PcOverflow::Wrap,
             stop_when_pc_stays: false,
@@ -79,6 +92,34 @@ impl Format {
     // Johnny's .ram and .mc files hold decimal words of two code and three operand digits.
     pub fn johnny_compatible(&self) -> bool {
         (self.radix, self.code_digits, self.operand_digits) == (10, 2, 3)
+    }
+
+    pub fn lmc() -> Self {
+        Self {
+            radix: 10,
+            code_digits: 1,
+            operand_digits: 2,
+            codes: Some(10),
+            cells: Some(100),
+            acc_min: -999,
+            acc_max: 999,
+            data_encoding: DataEncoding::Lmc,
+            ..Self::default()
+        }
+    }
+
+    pub fn marie() -> Self {
+        Self {
+            radix: 16,
+            code_digits: 1,
+            operand_digits: 3,
+            codes: Some(16),
+            cells: Some(4096),
+            acc_min: i16::MIN as i32,
+            acc_max: i16::MAX as i32,
+            data_encoding: DataEncoding::TwosComplement,
+            ..Self::default()
+        }
     }
 
     // How many values that many digits hold.

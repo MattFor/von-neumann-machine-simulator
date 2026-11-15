@@ -6,7 +6,7 @@ mod registers;
 
 use std::collections::{HashSet, VecDeque};
 
-pub use format::{Format, PcOverflow, UnknownCode};
+pub use format::{DataEncoding, Format, PcOverflow, UnknownCode};
 pub use instructions::{Definition, FETCH, InstructionSet, MicroOp, Opcode};
 pub use memory::MEMORY_SIZE;
 pub use registers::{ACC_MAX, ACC_MIN};
@@ -107,6 +107,36 @@ impl Machine {
         self.cpu.acc = value.max(format.acc_min).min(format.acc_max);
     }
 
+    pub(super) fn set_data_bus(&mut self, value: i32) {
+        self.cpu.mbr = match self.instruction_set.format.data_encoding {
+            DataEncoding::Unsigned => value.clamp(0, 0xffff),
+            DataEncoding::TwosComplement => value.clamp(i16::MIN as i32, i16::MAX as i32),
+            // LMC mailboxes hold three decimal digits. A stored -1 wraps to 999, which loads
+            // back as the unsigned mailbox value 999; the mailbox has no separate sign bit.
+            DataEncoding::Lmc => value.rem_euclid(1000),
+        };
+    }
+
+    pub(super) fn memory_to_data_bus(&mut self, value: i32) {
+        let value = match self.instruction_set.format.data_encoding {
+            DataEncoding::Unsigned => value.clamp(0, 0xffff),
+            DataEncoding::TwosComplement => (value as u16 as i16) as i32,
+            DataEncoding::Lmc => value.clamp(0, 999),
+        };
+
+        self.set_data_bus(value);
+    }
+
+    pub(super) fn write_data_bus(&mut self) {
+        let value = match self.instruction_set.format.data_encoding {
+            DataEncoding::Unsigned => self.cpu.mbr,
+            DataEncoding::TwosComplement => (self.cpu.mbr as i16 as u16) as i32,
+            DataEncoding::Lmc => self.cpu.mbr.rem_euclid(1000),
+        };
+
+        self.memory.write(self.cpu.mar as usize, value);
+    }
+
     pub fn print(&mut self, text: &str) {
         self.output.push_str(text);
 
@@ -118,8 +148,9 @@ impl Machine {
     // The micro steps the control unit is working through.
     pub fn steps(&self) -> &[MicroOp] {
         if self.executing {
-            self.instruction_set
-                .steps(self.instruction_set.split(self.cpu.ir as i32).0)
+            let (code, operand) = self.instruction_set.split(self.cpu.ir as i32);
+
+            self.instruction_set.steps_for(code, operand)
         } else {
             &FETCH
         }
@@ -217,7 +248,7 @@ impl Machine {
         format!(
             "{}.{operand}  {} {operand}",
             set.format.code_text(code),
-            set.mnemonic(code)
+            set.mnemonic_for(code, set.split(raw).1)
         )
     }
 }
@@ -512,6 +543,7 @@ mod tests {
         let micro = machine.recording.take().unwrap();
         machine.instruction_set.definitions.push(Definition {
             code: 77,
+            operand: None,
             mnemonic: "DBL".to_string(),
             opcode: Opcode::Custom,
             micro,
@@ -684,6 +716,155 @@ mod tests {
         assert!(machine.run_steps(5));
         assert!(!machine.halted);
         assert_eq!(machine.cpu.pc, 0);
+    }
+
+    #[test]
+    fn every_bundled_example_runs_with_its_preset() {
+        for example in crate::program::examples() {
+            let mut machine = Machine::new();
+            machine.instruction_set = example.preset.clone();
+            example.program.apply(&mut machine);
+
+            if example.name == "LMC echo" || example.name == "MARIE echo" {
+                machine.push_input(42);
+            }
+
+            machine.run_steps(100);
+
+            assert!(machine.halted, "{} did not halt", example.name);
+            let expected = match example.name {
+                "Standard countdown" => "5\n4\n3\n2\n1\n",
+                "LMC echo" | "MARIE echo" => "42\n",
+                "Johnny sum" | "Bonsai increment" => "",
+                name => panic!("unexpected example {name}"),
+            };
+
+            assert_eq!(machine.output, expected, "{}", example.name);
+
+            match example.name {
+                "Johnny sum" => assert_eq!(machine.memory.read(12), 12),
+                "Bonsai increment" => assert_eq!(machine.memory.read(5), 5),
+                _ => {}
+            }
+        }
+    }
+
+    #[test]
+    fn lmc_branches_on_zero_and_nonnegative_accumulator() {
+        for (word, acc, expected_pc) in [
+            (704, 0, 4),
+            (704, 1, 1),
+            (804, -1, 1),
+            (804, 0, 4),
+            (804, 1, 4),
+        ] {
+            let mut machine = machine_with(&[word]);
+            machine.instruction_set = InstructionSet::lmc();
+            machine.set_acc(acc);
+
+            machine.step();
+
+            assert_eq!(machine.cpu.pc, expected_pc, "word {word}, AC {acc}");
+        }
+    }
+
+    #[test]
+    fn lmc_input_and_output_use_the_fixed_instruction_operands() {
+        let mut machine = machine_with(&[901, 902, 0]);
+        machine.instruction_set = InstructionSet::lmc();
+        machine.push_input(321);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.output, "321\n");
+
+        let mut invalid = machine_with(&[903]);
+        invalid.instruction_set = InstructionSet::lmc();
+        invalid.step();
+
+        assert!(!invalid.halted);
+        assert_eq!(invalid.cpu.pc, 1);
+    }
+
+    #[test]
+    fn lmc_stores_negative_values_as_three_digit_modulo_values() {
+        let mut machine = machine_with(&[310, 510, 902, 0]);
+        machine.instruction_set = InstructionSet::lmc();
+        machine.set_acc(-1);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(10), 999);
+        assert_eq!(machine.output, "999\n");
+    }
+
+    #[test]
+    fn marie_skipcond_checks_less_zero_equal_zero_and_greater_zero() {
+        for (acc, condition, should_skip) in [
+            (-1, 0x000, true),
+            (0, 0x000, false),
+            (0, 0x400, true),
+            (1, 0x400, false),
+            (1, 0x800, true),
+            (0, 0x800, false),
+        ] {
+            let mut machine = machine_with(&[0x8000 + condition]);
+            machine.instruction_set = InstructionSet::marie();
+            machine.set_acc(acc);
+
+            machine.step();
+
+            assert_eq!(machine.cpu.pc, if should_skip { 2 } else { 1 });
+        }
+    }
+
+    #[test]
+    fn marie_jns_and_jumpi_return_to_the_instruction_after_the_call() {
+        let mut memory = vec![0; 12];
+        memory[0] = 0x000a;
+        memory[1] = 0x6000;
+        memory[2] = 0x7000;
+        memory[11] = 0xc00a;
+
+        let mut machine = machine_with(&memory);
+        machine.instruction_set = InstructionSet::marie();
+        machine.set_acc(42);
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(10), 1);
+        assert_eq!(machine.output, "42\n");
+    }
+
+    #[test]
+    fn marie_indirect_add_load_and_store_follow_the_pointer_cell() {
+        let mut machine = machine_with(&[0xd00a, 0xb00a, 0xe00a, 0x1014, 0x6000, 0x7000]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(10, 20);
+        machine.memory.write(20, 5);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(20), 10);
+        assert_eq!(machine.cpu.acc, 10);
+        assert_eq!(machine.output, "10\n");
+    }
+
+    #[test]
+    fn marie_stores_and_loads_negative_accumulator_values_in_twos_complement() {
+        let mut machine = machine_with(&[0xa000, 0x400a, 0x200b, 0x100b, 0x6000, 0x7000]);
+        machine.instruction_set = InstructionSet::marie();
+        machine.memory.write(10, 123);
+
+        machine.run_steps(10);
+
+        assert!(machine.halted);
+        assert_eq!(machine.memory.read(11), 65_413);
+        assert_eq!(machine.cpu.acc, -123);
+        assert_eq!(machine.output, "-123\n");
     }
 
     const MEMORY_SIZE_FOR_TESTS: usize = crate::machine::MEMORY_SIZE + 1;

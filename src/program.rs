@@ -4,7 +4,7 @@ use std::path::Path;
 use serde::{Deserialize, Serialize};
 
 use crate::assembler::{assemble, disassemble};
-use crate::machine::{InstructionSet, MEMORY_SIZE, Machine};
+use crate::machine::{DataEncoding, InstructionSet, MEMORY_SIZE, Machine};
 use crate::utilities::read_text;
 
 fn has_extension(path: &Path, extension: &str) -> bool {
@@ -35,6 +35,64 @@ pub struct Program {
     // Absent in older files; those keep whatever set is loaded.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub instruction_set: Option<InstructionSet>,
+}
+
+// Kept available for the example selector added in the next UI change.
+#[allow(dead_code)]
+pub struct Example {
+    pub name: &'static str,
+    pub preset: InstructionSet,
+    pub program: Program,
+}
+
+#[allow(dead_code)]
+pub fn examples() -> Vec<Example> {
+    fn example(
+        name: &'static str,
+        preset: InstructionSet,
+        mut program: Program,
+    ) -> Example {
+        program.instruction_set = Some(preset.clone());
+
+        Example {
+            name,
+            preset,
+            program,
+        }
+    }
+
+    vec![
+        example(
+            "Standard countdown",
+            InstructionSet::default(),
+            serde_json::from_str(include_str!("../assets/countdown.json"))
+                .expect("bundled Standard example is valid"),
+        ),
+        example(
+            "Johnny sum",
+            InstructionSet::johnny(),
+            Program::from_ram("sum", include_str!("../assets/sum.ram"))
+                .expect("bundled Johnny example is valid"),
+        ),
+        example(
+            "Bonsai increment",
+            InstructionSet::bonsai(),
+            Program::from_ram("bonsai", include_str!("../assets/bonsai.ram"))
+                .expect("bundled Bonsai example is valid"),
+        ),
+        example(
+            "LMC echo",
+            InstructionSet::lmc(),
+            serde_json::from_str(include_str!("../assets/lmc-echo.json"))
+                .expect("bundled LMC example is valid"),
+        ),
+        example(
+            "MARIE echo",
+            InstructionSet::marie(),
+            serde_json::from_str(include_str!("../assets/marie-echo.json"))
+                .expect("bundled MARIE example is valid"),
+        ),
+    ]
 }
 
 impl Program {
@@ -112,6 +170,15 @@ impl Program {
 
         if let Some(set) = &program.instruction_set {
             set.check()?;
+
+            if set.format.data_encoding == DataEncoding::Lmc {
+                anyhow::ensure!(
+                    program.memory.len() <= set.format.cells()
+                        && program.memory.iter().all(|word| (0..=999).contains(word)),
+                    "an LMC program has at most {} cells, each between 000 and 999",
+                    set.format.cells()
+                );
+            }
         }
 
         Ok(program)
