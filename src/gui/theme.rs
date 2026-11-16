@@ -76,9 +76,17 @@ fn visuals(mut visuals: Visuals, palette: [u32; 8]) -> Visuals {
     }
 
     // The fill of a checkbox's box, a radio button and a slider's rail, but not of buttons; in the
-    // widget colour an unticked box all but vanished into the light cards.
-    if !visuals.dark_mode {
-        widgets.inactive.bg_fill = Color32::from_rgb(0xb4, 0xba, 0xc4);
+    // widget colour an unticked box all but vanished into the cards.
+    widgets.inactive.bg_fill = if visuals.dark_mode {
+        Color32::from_rgb(0x4f, 0x55, 0x63)
+    } else {
+        Color32::from_rgb(0xb4, 0xba, 0xc4)
+    };
+
+    // Hovering still brightens that box in dark, where the hover colour is darker than it.
+    if visuals.dark_mode {
+        widgets.hovered.bg_fill = Color32::from_rgb(0x60, 0x67, 0x76);
+        widgets.active.bg_fill = Color32::from_rgb(0x60, 0x67, 0x76);
     }
 
     visuals
@@ -89,33 +97,56 @@ mod tests {
     use super::*;
 
     #[test]
-    fn an_unticked_box_stands_out_in_light_and_dark_stays_as_it_was() {
-        let light = visuals(Visuals::light(), LIGHT);
+    fn an_unticked_box_stands_out_in_both_themes() {
         let dark = visuals(Visuals::dark(), DARK);
+        let sum = |c: Color32| c.r() as u32 + c.g() as u32 + c.b() as u32;
+        assert!(sum(dark.widgets.hovered.bg_fill) > sum(dark.widgets.inactive.bg_fill));
+        assert_ne!(dark.widgets.hovered.weak_bg_fill, dark.widgets.hovered.bg_fill);
+
         let apart = |a: Color32, b: Color32| {
             (0..3)
                 .map(|channel| a.to_array()[channel].abs_diff(b.to_array()[channel]))
                 .max()
                 .unwrap()
         };
-        let fill = light.widgets.inactive.bg_fill;
-
-        assert!(apart(fill, light.window_fill) >= 48 && apart(fill, light.panel_fill) >= 48);
-        assert_eq!(light.widgets.inactive.weak_bg_fill, Color32::from_rgb(0xe4, 0xe7, 0xec));
-        assert_eq!(dark.widgets.inactive.bg_fill, Color32::from_rgb(0x2a, 0x2e, 0x37));
-
-        // That is the fill egui paints the box with.
         let ctx = Context::default();
         apply(&ctx);
-        ctx.set_theme(Theme::Light);
 
-        let mut output = ctx.run_ui(Default::default(), |ui| {
-            ui.checkbox(&mut false, "box");
-        });
-        output.textures_delta.clear();
+        for (theme, visuals, fill, button) in [
+            (
+                Theme::Light,
+                visuals(Visuals::light(), LIGHT),
+                Color32::from_rgb(0xb4, 0xba, 0xc4),
+                Color32::from_rgb(0xe4, 0xe7, 0xec),
+            ),
+            (
+                Theme::Dark,
+                visuals(Visuals::dark(), DARK),
+                Color32::from_rgb(0x4f, 0x55, 0x63),
+                Color32::from_rgb(0x2a, 0x2e, 0x37),
+            ),
+        ] {
+            assert_eq!(visuals.widgets.inactive.bg_fill, fill, "{theme:?}");
+            assert!(apart(fill, visuals.window_fill) >= 48, "{theme:?}");
+            assert!(apart(fill, visuals.panel_fill) >= 48, "{theme:?}");
 
-        assert!(output.shapes.iter().any(
-            |clipped| matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == fill)
-        ));
+            // Buttons keep the widget colour.
+            assert_eq!(visuals.widgets.inactive.weak_bg_fill, button, "{theme:?}");
+
+            // That is the fill egui paints the box with.
+            ctx.set_theme(theme);
+
+            let mut output = ctx.run_ui(Default::default(), |ui| {
+                ui.checkbox(&mut false, "box");
+            });
+            output.textures_delta.clear();
+
+            assert!(
+                output.shapes.iter().any(
+                    |clipped| matches!(&clipped.shape, egui::Shape::Rect(rect) if rect.fill == fill)
+                ),
+                "{theme:?}"
+            );
+        }
     }
 }
