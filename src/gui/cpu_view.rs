@@ -19,7 +19,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
             .on_hover_text("Address of the next instruction; drag or double-click to change it")
             .changed()
         {
-            machine.cpu.pc = pc as u16;
+            machine.edit_pc(pc as u16);
         }
 
         if ui
@@ -47,7 +47,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
             ))
             .changed()
         {
-            machine.set_acc(format.value(word));
+            machine.edit_acc(format.value(word));
         }
 
         // The zero lamp: said in words too, not only by colour.
