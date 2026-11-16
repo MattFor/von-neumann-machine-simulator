@@ -10,8 +10,6 @@ use std::time::{Duration, Instant};
 use crate::debugger::debug::Debug;
 use gui_state::{AppState, MAX_SPEED, MIN_SPEED, PRESETS, UiMode, preset_of};
 
-const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
-
 const FRAME: Duration = Duration::from_micros(16_667);
 
 const CUSTOM: (&str, &str) = (
@@ -198,16 +196,6 @@ impl VnmApp {
             });
         });
 
-        if self.state.mode == UiMode::Machine && (self.state.show_console || !self.state.advanced) {
-            egui::Panel::bottom("console_panel")
-                .resizable(true)
-                .default_size(CONSOLE_PANEL_HEIGHT)
-                .min_size(CONSOLE_PANEL_HEIGHT)
-                .show(ui, |ui| {
-                    crate::gui::console_view::show(ui, &mut self.state.machine);
-                });
-        }
-
         egui::CentralPanel::default().show(ui, |ui| match self.state.mode {
             UiMode::Machine => {
                 machine_mode::show(ui, &mut self.state);
@@ -265,6 +253,78 @@ mod tests {
                 output.viewport_output[&egui::ViewportId::ROOT].repaint_delay
             })
             .collect()
+    }
+
+    // The smallest window, with every view and the console: the memory keeps three whole rows and
+    // no text runs past the side of its card.
+    #[test]
+    fn the_smallest_window_shows_three_memory_rows_and_cuts_no_line_short() {
+        let mut app = VnmApp {
+            state: AppState::new(),
+        };
+        let ctx = egui::Context::default();
+        crate::gui::theme::apply(&ctx);
+
+        for preset in 0..PRESETS.len() {
+            app.state.pick(preset);
+
+            for mask in 0..64 {
+                let state = &mut app.state;
+                state.advanced = mask & 1 != 0;
+                state.show_memory = mask & 2 != 0;
+                state.show_registers = mask & 4 != 0;
+                state.show_control_unit = mask & 8 != 0;
+                state.show_cpu = mask & 16 != 0;
+                state.show_console = mask & 32 != 0;
+
+                let mut shapes = Vec::new();
+
+                for frame in 0..3 {
+                    let input = egui::RawInput {
+                        screen_rect: Some(egui::Rect::from_min_size(
+                            egui::Pos2::ZERO,
+                            egui::vec2(854.0, 480.0),
+                        )),
+                        time: Some(frame as f64),
+                        ..Default::default()
+                    };
+                    let mut output = ctx.run_ui(input, |ui| app.draw(ui));
+
+                    output.textures_delta.clear();
+                    shapes = output.shapes;
+                }
+
+                let format = app.state.machine.instruction_set.format;
+                let mut rows = Vec::new();
+
+                for clipped in &shapes {
+                    let egui::Shape::Text(text) = &clipped.shape else {
+                        continue;
+                    };
+
+                    if text.galley.text().is_empty() {
+                        continue;
+                    }
+
+                    let bounds = text.visual_bounding_rect();
+
+                    assert!(
+                        bounds.right() <= clipped.clip_rect.right() + 0.5,
+                        "{preset} {mask} {:?}",
+                        text.galley.text()
+                    );
+
+                    if clipped.clip_rect.contains_rect(bounds) {
+                        rows.push(text.galley.text().to_string());
+                    }
+                }
+
+                let memory = !app.state.advanced || app.state.show_memory;
+                let shown = (0..3).all(|address| rows.contains(&format.operand_text(address)));
+
+                assert!(!memory || shown, "{preset} {mask}");
+            }
+        }
     }
 
     #[test]

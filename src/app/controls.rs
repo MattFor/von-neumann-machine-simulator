@@ -122,5 +122,41 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
                 .suffix(" ips"),
         )
         .on_hover_text("Instructions per second while running");
+
+        // On the speed's row when it fits, so the smallest window keeps room for the cards.
+        if state.advanced {
+            ui.separator();
+            ui.label("Views:");
+
+            for (shown, label, hint) in [
+                (
+                    &mut state.show_memory,
+                    "Memory",
+                    "The memory cells: the program and its data",
+                ),
+                (
+                    &mut state.show_registers,
+                    "Registers",
+                    "The registers and the instruction that comes next",
+                ),
+                (
+                    &mut state.show_control_unit,
+                    "Control unit",
+                    "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
+                ),
+                (
+                    &mut state.show_cpu,
+                    "CPU",
+                    "Program counter, accumulator and the arithmetic buttons",
+                ),
+                (
+                    &mut state.show_console,
+                    "Console",
+                    "What the program prints, and the numbers it reads",
+                ),
+            ] {
+                ui.checkbox(shown, label).on_hover_text(hint);
+            }
+        }
     });
 }

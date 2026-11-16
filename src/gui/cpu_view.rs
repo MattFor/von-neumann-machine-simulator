@@ -34,7 +34,7 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         }
     });
 
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         ui.label("Accumulator");
 
         let acc = machine.cpu.acc;

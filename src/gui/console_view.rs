@@ -2,8 +2,6 @@ use egui::Ui;
 
 use crate::machine::{Format, Machine};
 
-const CONSOLE_HEADER_AND_INPUT_HEIGHT: f32 = 56.0;
-
 // Numbers as the command line's --input reads them, so 0xFFFF is -1 on MARIE.
 fn parse(format: &Format, input: &str) -> Option<Vec<i32>> {
     input
@@ -27,34 +25,10 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
         if machine.waiting {
             ui.colored_label(ui.visuals().warn_fg_color, "waiting for input");
         }
-    });
 
-    // Sticking to the bottom lands a frame late, so grown output gets one more frame, idle or not.
-    let length = egui::Id::unique("console_length");
-    let grew = ui.data_mut(|data| {
-        std::mem::replace(data.get_temp_mut_or(length, 0), machine.output.len())
-    }) != machine.output.len();
+        // On the heading's row, so the smallest window keeps a line of output.
+        ui.separator();
 
-    if grew {
-        ui.ctx().request_repaint();
-    }
-
-    let output_height = (ui.available_height() - CONSOLE_HEADER_AND_INPUT_HEIGHT).max(0.0);
-
-    egui::ScrollArea::vertical()
-        .id_salt("console_scroll")
-        .auto_shrink([false, false])
-        .max_height(output_height)
-        .stick_to_bottom(true)
-        .show(ui, |ui| {
-            if machine.output.is_empty() {
-                ui.weak("(no output)");
-            } else {
-                ui.monospace(&machine.output);
-            }
-        });
-
-    ui.horizontal(|ui| {
         let id = egui::Id::unique("console_input");
         let mut input: String = ui.data(|data| data.get_temp(id)).unwrap_or_default();
 
@@ -94,6 +68,30 @@ pub fn show(ui: &mut Ui, machine: &mut Machine) {
 
         ui.data_mut(|data| data.insert_temp(id, input));
     });
+
+    // Sticking to the bottom lands a frame late, so grown output gets one more frame, idle or not.
+    let length = egui::Id::unique("console_length");
+    let grew = ui.data_mut(|data| {
+        std::mem::replace(data.get_temp_mut_or(length, 0), machine.output.len())
+    }) != machine.output.len();
+
+    if grew {
+        ui.ctx().request_repaint();
+    }
+
+    egui::ScrollArea::vertical()
+        .id_salt("console_scroll")
+        .auto_shrink([false, false])
+        .max_height(ui.available_height().max(0.0))
+        .min_scrolled_height(0.0)
+        .stick_to_bottom(true)
+        .show(ui, |ui| {
+            if machine.output.is_empty() {
+                ui.weak("(no output)");
+            } else {
+                ui.monospace(&machine.output);
+            }
+        });
 }
 
 #[cfg(test)]
