@@ -1,6 +1,12 @@
 use super::{controls, gui_state::AppState};
-use crate::gui::{control_unit_view, cpu_view, data_bus_view, memory_view, register_view};
+use crate::gui::{console_view, control_unit_view, cpu_view, data_bus_view, memory_view, register_view};
 use egui::{Rect, Ui, pos2};
+
+const CONSOLE_HEIGHT: f32 = 120.0;
+// Its heading row with the input, and a line of output.
+const MIN_CONSOLE_HEIGHT: f32 = 60.0;
+// The memory's heading, address bus and column names, and three rows.
+const MIN_CARD_HEIGHT: f32 = 200.0;
 
 // A card filling the rectangle it is given; debug builds outline it in red.
 fn panel(ui: &mut Ui, rect: egui::Rect, add: impl FnOnce(&mut Ui)) {
@@ -37,40 +43,20 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
 
     let advanced = state.advanced;
 
-    if advanced {
-        ui.horizontal(|ui| {
-            ui.label("Views:");
+    ui.add_space(4.0);
 
-            for (shown, label, hint) in [
-                (
-                    &mut state.show_memory,
-                    "Memory",
-                    "The memory cells: the program and its data",
-                ),
-                (
-                    &mut state.show_registers,
-                    "Registers",
-                    "The registers and the instruction that comes next",
-                ),
-                (
-                    &mut state.show_control_unit,
-                    "Control unit",
-                    "The micro steps inside an instruction: watch them, fire them by hand or record your own instruction",
-                ),
-                (
-                    &mut state.show_cpu,
-                    "CPU",
-                    "Program counter, accumulator and the arithmetic buttons",
-                ),
-                (
-                    &mut state.show_console,
-                    "Console",
-                    "What the program prints, and the numbers it reads",
-                ),
-            ] {
-                ui.checkbox(shown, label).on_hover_text(hint);
-            }
-        });
+    if state.show_console || !advanced {
+        // The console gives way first, so the cards keep the memory's few rows.
+        let room = ui.available_height() - MIN_CARD_HEIGHT - data_bus_view::HEIGHT;
+
+        egui::Panel::bottom("console_panel")
+            .resizable(true)
+            .default_size(CONSOLE_HEIGHT)
+            .min_size(MIN_CONSOLE_HEIGHT)
+            .max_size(room.max(MIN_CONSOLE_HEIGHT))
+            .show(ui, |ui| {
+                console_view::show(ui, &mut state.machine);
+            });
     }
 
     // The simple view is always the memory next to the registers.
@@ -84,8 +70,6 @@ pub fn show(ui: &mut Ui, state: &mut AppState) {
     } else {
         [true, true, false, false]
     };
-
-    ui.add_space(4.0);
 
     let (cards, bus) = layout(
         ui.available_rect_before_wrap(),
@@ -167,7 +151,10 @@ mod tests {
 
     #[test]
     fn every_arrow_meets_a_shown_card_and_no_card_covers_another_or_the_bus() {
-        for size in [vec2(300.0, 150.0), vec2(830.0, 260.0), vec2(1160.0, 500.0), vec2(2500.0, 1400.0)] {
+        // The fourth is what the 854x480 window leaves the cards and bus once the console gives way.
+        let smallest = vec2(838.0, MIN_CARD_HEIGHT + data_bus_view::HEIGHT);
+
+        for size in [vec2(300.0, 150.0), vec2(830.0, 260.0), vec2(1160.0, 500.0), smallest, vec2(2500.0, 1400.0)] {
             let area = Rect::from_min_size(pos2(8.0, 90.0), size);
 
             for mask in 0..16 {
@@ -177,6 +164,7 @@ mod tests {
                 let acc = cpu.or(registers);
 
                 assert!(area.contains_rect(bus) && (bus.height() - data_bus_view::HEIGHT).abs() < 0.01);
+                assert!(size.y < smallest.y || memory.is_none_or(|memory| memory.height() >= MIN_CARD_HEIGHT - 0.01));
 
                 for (index, card) in cards.iter().enumerate() {
                     assert_eq!(card.is_some(), shown[index], "{mask} {size:?}");

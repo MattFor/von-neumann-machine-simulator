@@ -55,38 +55,42 @@ pub fn pick(set: &InstructionSet, definition: &Definition, operand: i32) -> i32 
 
 // With `by_hand` the address bus can be set and the cell it points at is shown.
 pub fn show(ui: &mut Ui, machine: &mut Machine, by_hand: bool) {
-    ui.heading("Memory");
+    let text = by_hand.then(|| address_bus_value(machine));
 
-    if !by_hand {
-        memory_grid_panel(ui, machine, 0.0);
-        return;
+    // The value sits by the heading, so the smallest window keeps room for a few rows.
+    ui.horizontal_wrapped(|ui| {
+        ui.heading("Memory");
+
+        if let Some(text) = &text {
+            ui.monospace(text)
+                .on_hover_text("Value of the cell the address bus points at");
+        }
+    });
+
+    if by_hand {
+        address_bus_panel(ui, machine);
+        ui.separator();
     }
 
-    address_bus_panel(ui, machine);
+    memory_grid_panel(ui, machine);
 
-    let separator_height = ui.separator().rect.height();
-    let footer_height =
-        ui.spacing().interact_size.y + 2.0 * ui.spacing().item_spacing.y + separator_height;
+    // Shown before this frame's edits, so a changed value is drawn again.
+    if text.is_some_and(|text| text != address_bus_value(machine)) {
+        ui.ctx().request_discard("the address bus value changed");
+    }
+}
 
-    memory_grid_panel(ui, machine, footer_height);
-
+fn address_bus_value(machine: &Machine) -> String {
     let format = machine.instruction_set.format;
     let value = format.value(machine.read(machine.address(machine.cpu.mar as i32) as usize));
-    let text = match format.radix {
+
+    match format.radix {
         10 => value.to_string(),
         _ => format!(
             "{} = {value}",
             format.text(format.word(value), format.code_digits + format.operand_digits)
         ),
-    };
-
-    ui.add_sized(
-        [ui.available_width(), ui.spacing().interact_size.y],
-        egui::Label::new(egui::RichText::new(text).monospace()),
-    )
-    .on_hover_text("Value of the cell the address bus points at");
-
-    ui.separator();
+    }
 }
 
 fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
@@ -120,7 +124,7 @@ fn address_bus_panel(ui: &mut Ui, machine: &mut Machine) {
     });
 }
 
-fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
+fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine) {
     // The cells the fetch and ram->db use, also when a smaller format left the registers outside.
     let pc = machine.address(machine.cpu.pc as i32) as usize;
     let row_height = ui.spacing().interact_size.y + ui.spacing().item_spacing.y;
@@ -135,7 +139,7 @@ fn memory_grid_panel(ui: &mut Ui, machine: &mut Machine, footer_height: f32) {
             print_headers(ui, row_height, column_width);
         });
 
-    let scroll_height = (ui.available_height() - footer_height).max(0.0);
+    let scroll_height = ui.available_height().max(0.0);
 
     // The offset, height and rows the view was shown with last frame.
     let view_id = egui::Id::unique("memory_view");
