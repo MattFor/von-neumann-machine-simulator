@@ -54,7 +54,8 @@ The keys work on the Machine tab.
   `INP` (901) and `OUT` (902), and a mask, like MARIE's `Skipcond`.
 - **Format**, on the Instruction Set tab: the radix, the digits of code and operand,
   how many codes and cells there are, the accumulator range, how negative numbers
-  are stored, what an unknown code or the end of memory does, and whether plus and
+  are stored, what an unknown code or the end of memory does, whether Run stops on an
+  instruction that leaves the program counter where it was, and whether plus and
   minus set flags, like SAP-1's. A format the
   machine can't hold is not applied, and the tab says why.
 
@@ -160,17 +161,19 @@ count:  DAT 5
   `Skipcond` takes its condition, as in `Skipcond 400`.
 - Numbers are in the set's radix unless `0x`, `0b` or `0d` says otherwise, and a
   label can stand in for one. Where B or D is a digit, as in hex, `0B` and `0D` are
-  just numbers, so MARIE's `HEX 0D05` is `D05`. A label ends in `:` or MARIE's `,`, or is LMC's first
-  word that is not a mnemonic (a directive's name counts as a label there).
+  just numbers, so MARIE's `HEX 0D05` is `D05`. A label is letters, digits and `_`, not
+  starting with a digit. It ends in `:` or MARIE's `,`, or is LMC's first word that is
+  not a mnemonic (a directive's name counts as a label there).
 - `DAT n` (`DAT` alone is 0) writes a number, as do MARIE's `DEC n` and `HEX n`. On
   MARIE, `DEC -1` is stored as `FFFF`. An instruction of the same name wins over
   any directive, like Johnny's `DEC`.
 - `ORG n` carries on at address `n`; going back over a filled cell is an error.
+  CARDIAC's fixed cell 00 counts as filled, so its programs start with an `ORG`.
 - `END` stops reading, like in MARIE. `END n` or `END label` also says where the
   program starts; without it, it starts at its first instruction or number.
 
 Saving under `.asm` writes this form: words that are no instruction come out as
-`DAT`, and a start other than 0 as `END n`.
+`DAT` (MARIE's negative ones as `DEC`), and a start other than 0 as `END n`.
 
 Files ending in `.mas` are MARIE's own assembly. They are always read in MARIE's
 mnemonics, whatever machine is loaded, and opening one switches to MARIE. Saving
@@ -196,7 +199,8 @@ von-neumann-machine-simulator run tests/programs/lmc-add.asm --machine lmc --inp
 
 The exit code says how it ended: 0 halted, 1 bad arguments or file, 2 step limit
 reached, 3 waiting for input with none left, 141 the reader went away (`| head`), as with
-other tools. `--help` lists all of it. Without arguments the window opens.
+other tools. A run also says which on stderr. `--help` lists all of it. Without
+arguments the window opens.
 [`tests/programs`](tests/programs) has textbook programs for every machine.
 
 `convert` loads a program and saves it in the format of the output file's extension,
@@ -207,7 +211,7 @@ von-neumann-machine-simulator convert tests/programs/marie-add.asm add.mas --mac
 ```
 
 `--machine` works as for `run`. A program the output format cannot hold, like a Standard one
-as `.ram`, is refused with exit code 1.
+as `.ram`, is refused with exit code 1; a conversion that works exits with 0.
 
 ## Building
 

@@ -30,8 +30,9 @@ const SECTIONS: [(&str, &str); 9] = [
          A running program stops by itself on HALT, on a breakpoint, and while IN waits for a \
          number.\n\n\
          Programs also run without the window, from a terminal: von-neumann-machine-simulator \
-         run add.asm --machine lmc --input 12,30 prints what the program outputs. --help there \
-         lists the options.",
+         run add.asm --machine lmc --input 12,30 prints what the program outputs, and convert \
+         add.asm add.json --machine lmc saves it in the format of the second file's extension. \
+         --help there lists the options.",
     ),
     (
         "Memory",
@@ -48,7 +49,8 @@ const SECTIONS: [(&str, &str); 9] = [
     (
         "Console",
         "OUT prints the accumulator. When a program stops on IN, type one or more numbers and \
-         press Enter. A running program then carries on by itself.",
+         press Enter. A running program then carries on by itself. 0x and 0b values are words \
+         in the machine's encoding, so 0xFFFF is -1 on MARIE.",
     ),
     (
         "Micro steps",
@@ -95,18 +97,21 @@ const SECTIONS: [(&str, &str); 9] = [
          decimal on Johnny; 0x in front makes a number hex. 0b and 0d make it binary or \
          decimal where B and D are not digits of the machine, so 0B05 stays hex on MARIE.\n\n\
          Comments start with ;, # or / (MARIE's). A name with : or , after it at the start of \
-         a line is a label, and can stand in for a number. Like in the Little Man Computer, a \
+         a line is a label, and can stand in for a number. A label is letters, digits and _, \
+         not starting with a digit. Like in the Little Man Computer, a \
          line may also start with a label followed by the instruction. Instructions with a \
          fixed operand, like LMC's INP and OUT, take none; MARIE's Skipcond takes its \
          condition, as in Skipcond 400. Two mnemonics that differ only in case can't be used.\n\n\
          DAT 5 puts the number 5 in a cell, and DEC 5 and HEX 5 do it in decimal or hex. On \
          MARIE, DEC -1 is stored as FFFF. An instruction of the same name wins over any of \
          these, like Johnny's DEC. ORG 40 carries on at address 40; going back over a filled \
-         cell is a mistake. END stops reading, like in MARIE, and END 40 or END start also \
+         cell is a mistake. CARDIAC's fixed cell 00 counts as filled, so its programs start \
+         with an ORG. END stops reading, like in MARIE, and END 40 or END start also \
          says where the program starts. Without it, it starts at the first instruction or \
          number.\n\n\
          Save a program under a name ending in .asm to write it as text. Cells that hold no \
-         instruction come out as DAT, and a start other than 0 as END.\n\n\
+         instruction come out as DAT (MARIE's negative ones as DEC), and a start other than 0 \
+         as END.\n\n\
          Files ending in .mas are MARIE's own: Open Program reads them in MARIE's mnemonics, \
          whatever machine is loaded, and switches to MARIE. Saving under .mas writes a MARIE \
          program that way.",
@@ -133,7 +138,8 @@ const SECTIONS: [(&str, &str); 9] = [
          The Format on the Instruction Set tab sets what the words look like: the radix, the \
          digits of code and operand, how many codes and cells there are, the accumulator range, \
          how negative numbers are stored, what happens on an unknown code or after the last \
-         cell, and whether plus and minus set flags. A format the registers cannot hold, or one \
+         cell, whether Run stops when the program counter stays, and whether plus and minus \
+         set flags. A format the registers cannot hold, or one \
          that leaves an instruction without its code, is not applied, and the tab says why.\n\n\
          Open Program reads Johnny's .ram files and Open Set its .mc microcode files. They hold \
          no machine, so they open into the loaded one when it uses Johnny's format (Johnny, \
