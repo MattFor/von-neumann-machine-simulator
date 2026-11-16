@@ -5,12 +5,14 @@ pub mod instruction_mode;
 pub mod machine_mode;
 
 use eframe::egui;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::debugger::debug::Debug;
 use gui_state::{AppState, MAX_SPEED, MIN_SPEED, PRESETS, UiMode, preset_of};
 
 const CONSOLE_PANEL_HEIGHT: f32 = 120.0;
+
+const FRAME: Duration = Duration::from_micros(16_667);
 
 const CUSTOM: (&str, &str) = (
     "Custom",
@@ -226,9 +228,10 @@ impl VnmApp {
             }
         });
 
-        // After drawing, so that Run pressed in this frame is seen.
+        // After drawing, so that Run pressed in this frame is seen. Fast runs catch up in tick, so
+        // they need no more frames than a 60 Hz screen shows.
         if let Some(due) = self.state.due() {
-            ui.ctx().request_repaint_after(due);
+            ui.ctx().request_repaint_after(due.max(FRAME));
         }
 
         // A toggle drawn after the panels it moves would leave them a frame behind, so the
@@ -296,5 +299,13 @@ mod tests {
             delays[3..].iter().all(|delay| *delay > Duration::from_millis(500)),
             "{delays:?}"
         );
+
+        // A fast one runs many instructions a frame, not a frame per instruction. egui's own
+        // animations (the memory view following the PC) may still ask for one right away.
+        app.state.speed = MAX_SPEED;
+
+        let delays = repaints(&mut app, 6, size);
+
+        assert!(delays[3..].iter().all(|delay| delay.is_zero() || *delay >= FRAME), "{delays:?}");
     }
 }
